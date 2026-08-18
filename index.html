@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>EarthVisited — mark the countries you have visited</title>
+<meta name="description" content="Click the countries you have been to, see how much of the world you have covered, and download your map as an image.">
+<meta name="color-scheme" content="dark light">
+<meta property="og:title" content="EarthVisited">
+<meta property="og:description" content="Mark the countries you have visited and download your world map.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🌍</text></svg>">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="globe" aria-hidden="true">🌍</span>
+    <h1>Earth<span>Visited</span></h1>
+  </div>
+  <div class="topbar-actions">
+    <button id="langBtn" class="chip" type="button" title="Türkçe" aria-label="Türkçe">TR</button>
+    <button id="themeBtn" class="chip" type="button" data-i18n-title="theme" aria-label="Theme">
+      <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9Z" fill="currentColor"/></svg>
+    </button>
+  </div>
+</header>
+
+<main>
+  <section class="stage">
+    <div class="mapwrap" id="mapwrap">
+      <svg id="map" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="World map"></svg>
+      <div class="zoomctl">
+        <button id="zoomIn" type="button" aria-label="Zoom in">+</button>
+        <button id="zoomOut" type="button" aria-label="Zoom out">−</button>
+        <button id="zoomReset" type="button" aria-label="Reset view">⤾</button>
+      </div>
+      <div class="hint" id="hint" data-i18n="hint"></div>
+      <div class="tip" id="tip" hidden></div>
+    </div>
+  </section>
+
+  <aside class="panel">
+    <div class="score">
+      <div class="score-main">
+        <span class="count" id="count">0</span>
+        <span class="of">/ 195</span>
+        <span class="pct" id="pct">0%</span>
+      </div>
+      <div class="bar"><i id="barfill"></i></div>
+      <p class="score-sub"><span data-i18n="countries">countries visited</span> · <span id="terr">0</span> <span data-i18n="territories">territories</span></p>
+    </div>
+
+    <div class="regions" id="regions"></div>
+
+    <div class="search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
+      <input id="search" type="search" autocomplete="off" spellcheck="false" data-i18n-ph="search" placeholder="Search a country…">
+    </div>
+
+    <div class="list" id="list" role="group" aria-label="Countries"></div>
+
+    <div class="panel-actions">
+      <button id="resetBtn" class="btn" type="button" data-i18n="reset">Reset</button>
+      <button id="shareBtn" class="btn" type="button" data-i18n="share">Copy link</button>
+      <button id="dlBtn" class="btn primary" type="button" data-i18n="download">Download PNG</button>
+    </div>
+  </aside>
+</main>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="js/data.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

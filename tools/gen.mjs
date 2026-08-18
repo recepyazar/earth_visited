@@ -1,0 +1,176 @@
+// Builds ../js/data.js — the projected world map + country metadata.
+//
+// Sources:
+//   world-atlas    Natural Earth 1:50m country polygons (TopoJSON)
+//   world-countries ISO codes, English/Turkish names, region, UN membership, flag emoji
+//
+// Run:  npm install && npm run build
+import { readFileSync, writeFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { geoNaturalEarth1, geoPath } from 'd3-geo';
+import { feature } from 'topojson-client';
+import { presimplify, simplify } from 'topojson-simplify';
+import wcRaw from 'world-countries/countries.json' with { type: 'json' };
+
+const WIDTH = 1000; // viewBox width the paths are baked for
+const SIMPLIFY = 0.001; // topojson weight: drops sub-pixel detail before projecting
+const TOL = 0.3; // px: consecutive points closer than this are merged
+const OUT = fileURLToPath(new URL('../js/data.js', import.meta.url));
+
+/* ---------- path serializer: rounds to 0.1px and drops near-duplicate points ---------- */
+function makeCtx(tol, dec = 1) {
+  const k = 10 ** dec;
+  const r = (v) => Math.round(v * k) / k;
+  let out = [];
+  let first = null;
+  let prev = null;
+  let pending = null;
+  const flush = () => {
+    if (pending) {
+      out.push(`L${pending[0]},${pending[1]}`);
+      prev = pending;
+      pending = null;
+    }
+  };
+  return {
+    moveTo(x, y) {
+      flush();
+      first = prev = [r(x), r(y)];
+      out.push(`M${first[0]},${first[1]}`);
+    },
+    lineTo(x, y) {
+      const p = [r(x), r(y)];
+      if (Math.abs(p[0] - prev[0]) < tol && Math.abs(p[1] - prev[1]) < tol) {
+        pending = p; // keep it around in case it is the ring's last point
+        return;
+      }
+      pending = null;
+      out.push(`L${p[0]},${p[1]}`);
+      prev = p;
+    },
+    closePath() {
+      pending = null;
+      out.push('Z');
+      prev = first;
+    },
+    arc() {},
+    result() {
+      const s = out.join('');
+      out = [];
+      first = prev = pending = null;
+      return s;
+    },
+  };
+}
+
+/* ---------- projection ---------- */
+const topoPath = fileURLToPath(new URL('./node_modules/world-atlas/countries-50m.json', import.meta.url));
+const topo = simplify(presimplify(JSON.parse(readFileSync(topoPath, 'utf8'))), SIMPLIFY);
+const fc = feature(topo, topo.objects.countries);
+
+const proj = geoNaturalEarth1().precision(0.1);
+proj.fitWidth(WIDTH, { type: 'Sphere' });
+const measure = geoPath(proj);
+const [[, y0], [, y1]] = measure.bounds({ type: 'Sphere' });
+proj.translate([proj.translate()[0], proj.translate()[1] - y0]); // sphere top -> y=0
+const HEIGHT = Math.round((y1 - y0) * 10) / 10;
+
+const ctx = makeCtx(TOL);
+const draw = geoPath(proj, ctx);
+const toPath = (geo) => {
+  draw(geo);
+  return ctx.result();
+};
+
+/* ---------- metadata ---------- */
+const byN3 = new Map(wcRaw.map((c) => [c.ccn3, c]));
+const byA2 = new Map(wcRaw.map((c) => [c.cca2, c]));
+// UN members + the two observer states = the canonical 195.
+const isSovereign = (c) => c.unMember || c.cca2 === 'VA' || c.cca2 === 'PS';
+
+// Natural Earth shapes that carry no ISO code of their own.
+const SPECIAL = {
+  Somaliland: { merge: 'SO' },
+  'N. Cyprus': { merge: 'CY' },
+  Kosovo: { own: { c: 'XK', n: 'Kosovo', t: 'Kosova', g: '🇽🇰', r: 'Europe', s: 2 } },
+  'Indian Ocean Ter.': { decor: true },
+  'Siachen Glacier': { decor: true },
+};
+
+// Too small for Natural Earth 50m to include at all.
+const EXTRA_POINTS = [{ a2: 'TV', lon: 179.2, lat: -8.52 }];
+
+const metaOf = (wc) => ({
+  c: wc.cca2,
+  n: wc.name.common,
+  t: wc.translations?.tur?.common || wc.name.common,
+  g: wc.flag,
+  r: wc.region || '—',
+  s: isSovereign(wc) ? 1 : 2,
+});
+
+const out = new Map();
+const decor = [];
+const unmatched = [];
+
+const add = (meta, geo) => {
+  const d = toPath(geo);
+  const area = Math.round(Math.abs(measure.area(geo)) * 10) / 10;
+  const [cx, cy] = measure.centroid(geo);
+  const rec = out.get(meta.c);
+  if (rec) {
+    rec.d += d;
+    if (area > rec.a) Object.assign(rec, { a: area, x: round1(cx), y: round1(cy) });
+    return;
+  }
+  out.set(meta.c, { ...meta, a: area, x: round1(cx), y: round1(cy), d });
+};
+const round1 = (v) => Math.round(v * 10) / 10;
+
+for (const geo of fc.features) {
+  const rule = SPECIAL[geo.properties.name];
+  if (rule?.decor) {
+    decor.push(toPath(geo));
+    continue;
+  }
+  if (rule?.merge) {
+    add(metaOf(byA2.get(rule.merge)), geo);
+    continue;
+  }
+  if (rule?.own) {
+    add(rule.own, geo);
+    continue;
+  }
+  const wc = byN3.get(String(geo.id).padStart(3, '0'));
+  if (!wc) {
+    unmatched.push(`${geo.id}:${geo.properties.name}`);
+    decor.push(toPath(geo));
+    continue;
+  }
+  add(metaOf(wc), geo);
+}
+
+for (const { a2, lon, lat } of EXTRA_POINTS) {
+  if (out.has(a2)) continue;
+  const [x, y] = proj([lon, lat]);
+  out.set(a2, { ...metaOf(byA2.get(a2)), a: 0, x: round1(x), y: round1(y), d: '' });
+}
+
+/* ---------- emit ---------- */
+const feats = [...out.values()].sort((a, b) => b.a - a.a);
+const sovereign = feats.filter((f) => f.s === 1);
+const missing = wcRaw.filter((c) => isSovereign(c) && !out.has(c.cca2)).map((c) => c.cca2);
+
+const js =
+  `// GENERATED FILE — do not edit. Run \`npm run build\` in tools/ to regenerate.\n` +
+  `// Natural Earth 1:50m via world-atlas, metadata via world-countries.\n` +
+  `// ${feats.length} selectable entities, of which ${sovereign.length} sovereign countries.\n` +
+  `window.WORLD = ${JSON.stringify({ w: WIDTH, h: HEIGHT, decor, f: feats })};\n`;
+writeFileSync(OUT, js);
+
+console.log(`viewBox        0 0 ${WIDTH} ${HEIGHT}`);
+console.log(`entities       ${feats.length} (${sovereign.length} sovereign, ${feats.length - sovereign.length} territories)`);
+console.log(`decor shapes   ${decor.length}${unmatched.length ? ` (unmatched: ${unmatched.join(', ')})` : ''}`);
+console.log(`missing        ${missing.join(', ') || 'none'}`);
+console.log(`marker-sized   ${feats.filter((f) => f.a < 6).length} entities under 6px²`);
+console.log(`data.js        ${Math.round(js.length / 1024)} KB`);
