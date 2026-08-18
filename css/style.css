@@ -640,13 +640,15 @@ img.flag { width: 20px; height: 14px; object-fit: cover; border-radius: 2px; }
   .btn { padding: 12px; }
   .row { padding: 9px 8px; }
   .flash { bottom: 10px; font-size: 15px; }
-  .hint { bottom: auto; top: 10px; left: 10px; right: 10px; text-align: center; }
+  /* stop the hint before the view switch in the same corner */
+  .hint { bottom: auto; top: 10px; left: 10px; right: 112px; text-align: left; }
 }
 
 /* no hover to lean on: the tooltip is useless, the hint sits above the strip */
 @media (hover: none) {
   .tip { display: none; }
-  .hint { bottom: auto; top: 10px; left: 10px; right: 10px; text-align: center; }
+  /* stop the hint before the view switch in the same corner */
+  .hint { bottom: auto; top: 10px; left: 10px; right: 112px; text-align: left; }
 }
 
 /* ---------- share sheet ---------- */
@@ -750,7 +752,6 @@ img.flag { width: 20px; height: 14px; object-fit: cover; border-radius: 2px; }
 .vbtn:hover { color: var(--ink); }
 .vbtn.on { color: var(--ink); background: color-mix(in srgb, var(--ink) 12%, transparent); }
 @media (max-width: 900px) {
-  /* the zoom buttons own the bottom-right corner, the hint sits on top */
-  .viewswitch { top: auto; bottom: 10px; left: 10px; right: auto; }
+  /* stays top-right like on the desktop — moving it around made it hard to find */
   .vbtn { width: 40px; height: 38px; }
 }
