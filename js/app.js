@@ -54,6 +54,7 @@
       copiedImage: 'Image copied to clipboard',
       copyImageFail: 'Copying images is not supported here — save it instead',
       shareNote: 'Posting to X, Facebook or LinkedIn shares the link. Save or copy the card first if you want the image in the post.',
+      instagramHint: 'Card saved and caption copied — attach it to your Instagram post.',
       sizeLink: 'Landscape',
       sizeSquare: 'Square',
       sizeStory: 'Story',
@@ -91,6 +92,7 @@
       copiedImage: 'Görsel panoya kopyalandı',
       copyImageFail: 'Burada görsel kopyalanamıyor — kaydedip kullanabilirsin',
       shareNote: 'X, Facebook ve LinkedIn bağlantıyı paylaşır. Görselin gönderide çıkması için önce kartı kaydet veya kopyala.',
+      instagramHint: 'Kart indirildi, açıklama kopyalandı — Instagram gönderine ekleyebilirsin.',
       sizeLink: 'Yatay',
       sizeSquare: 'Kare',
       sizeStory: 'Hikâye',
@@ -693,6 +695,7 @@
   }
 
   const SOCIALS = [
+    { id: 'instagram', label: 'Instagram', action: shareInstagram },
     { id: 'x', label: 'X', href: (u, txt) => `https://twitter.com/intent/tweet?text=${txt}&url=${u}` },
     { id: 'whatsapp', label: 'WhatsApp', href: (u, txt) => `https://wa.me/?text=${txt}%20${u}` },
     { id: 'telegram', label: 'Telegram', href: (u, txt) => `https://t.me/share/url?url=${u}&text=${txt}` },
@@ -707,6 +710,14 @@
     const txt = encodeURIComponent(shareMessage());
     $('socials').replaceChildren(
       ...SOCIALS.map((s) => {
+        if (s.action) {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.className = `social ${s.id}`;
+          b.textContent = s.label;
+          b.onclick = s.action;
+          return b;
+        }
         const a = document.createElement('a');
         a.className = `social ${s.id}`;
         a.href = s.href(u, txt);
@@ -716,6 +727,24 @@
         return a;
       })
     );
+  }
+
+  // Instagram has no web composer that accepts a link or an image, so: hand the
+  // PNG to the native share sheet where that exists, otherwise save the card and
+  // copy the caption so it can be pasted into the app.
+  async function shareInstagram() {
+    if (cardSize === 'link') {
+      cardSize = 'square';
+      renderSizes();
+      await renderCard();
+    }
+    if (canSharePng()) return systemShare();
+    saveCard();
+    try {
+      await navigator.clipboard.writeText(`${shareMessage()} ${shareUrl()}`);
+    } catch { /* clipboard blocked */ }
+    window.open('https://www.instagram.com/', '_blank', 'noopener');
+    toast(t('instagramHint'));
   }
 
   function openShare() {

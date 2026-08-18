@@ -26,7 +26,9 @@ Inspired by [turkeyvisited](https://ozanyerli.github.io/turkeyvisited/), but for
 - **Direct sharing** — *Share image* uses the Web Share API, handing the PNG straight to the phone's share
   sheet (WhatsApp, Instagram, X…) where the browser supports it; otherwise save or copy the card to the
   clipboard. Buttons for X, WhatsApp, Telegram, Facebook, LinkedIn, Reddit and e-mail open each platform's
-  composer pre-filled with your score and link.
+  composer pre-filled with your score and link. Instagram has no web composer at all, so its button switches
+  the card to the square format and either hands the PNG to the native share sheet or saves it and copies the
+  caption ready to paste.
 - **Copy link** — your selection is encoded in the URL (`#v1=…`), so a link restores the exact map.
   Selections also persist in `localStorage`. A static `og.png` gives the link a proper preview card.
 
@@ -54,6 +56,8 @@ For GitHub Pages: push the repo and set **Settings → Pages → Deploy from a b
 index.html          markup
 css/style.css       theme + layout
 js/data.js          GENERATED — projected map paths and country metadata
+assets/logo.svg     brand mark — globe with a check badge
+assets/favicon.svg  simplified mark for tab-sized rendering
 js/card.js          share-card renderer (SVG, one layout per format)
 js/app.js           map rendering, selection, zoom/pan, i18n, share sheet
 og.png              static link-preview image (regenerate with tools/gen-og.md steps)

@@ -26,6 +26,22 @@ window.EarthCard = (() => {
     `<text x="${r(x)}" y="${r(y)}" font-size="${r(size)}" font-weight="${weight}" fill="${fill}"` +
     `${anchor ? ` text-anchor="${anchor}"` : ''}${op === 1 ? '' : ` opacity="${op}"`}>${esc(s)}</text>`;
 
+  /* ---- brand mark, same geometry as assets/logo.svg ---- */
+  function logoMark(x, y, size, c) {
+    const k = size / 32;
+    return (
+      `<g transform="translate(${r(x)} ${r(y)}) scale(${r(k)})" opacity=".9">` +
+      `<g fill="none" stroke="${c.ink}" stroke-width="2" stroke-linecap="round">` +
+      `<circle cx="15" cy="15" r="11.6"/>` +
+      `<ellipse cx="15" cy="15" rx="5.4" ry="11.6" stroke-width="1.5"/>` +
+      `<path d="M4.2 11h21.6M4.2 19h21.6" stroke-width="1.5"/></g>` +
+      `<circle cx="24" cy="24" r="8.4" fill="${c.bg}"/>` +
+      `<circle cx="24" cy="24" r="6.6" fill="${c.on}"/>` +
+      `<path d="m20.9 24.2 2.2 2.2 4.1-4.7" fill="none" stroke="${c.bg}" stroke-width="2.1" ` +
+      `stroke-linecap="round" stroke-linejoin="round"/></g>`
+    );
+  }
+
   /* ---- the world map, cropped and scaled into a box ---- */
   function mapBlock(o, x, y, w) {
     const c = o.colors;
@@ -212,7 +228,11 @@ window.EarthCard = (() => {
     }
 
     parts.push(text(pad, footY, o.texts.url, { size: cfg.foot, weight: 600, fill: c.ink, op: 0.4 }));
-    parts.push(text(W - pad, footY, 'EarthVisited', { size: cfg.foot, weight: 700, fill: c.accent, anchor: 'end', op: 0.85 }));
+    const markSize = cfg.foot * 1.75;
+    parts.push(
+      text(W - pad, footY, 'EarthVisited', { size: cfg.foot, weight: 700, fill: c.accent, anchor: 'end', op: 0.85 }),
+      logoMark(W - pad - cfg.foot * 7.1 - markSize, footY - markSize * 0.78, markSize, c)
+    );
     parts.push('</svg>');
     return parts.join('');
   }

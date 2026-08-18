@@ -17,14 +17,25 @@
 <meta name="twitter:title" content="EarthVisited">
 <meta name="twitter:description" content="Mark the countries you have visited and download your world map.">
 <meta name="twitter:image" content="https://recepyazar.github.io/earth_visited/og.png">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🌍</text></svg>">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="assets/favicon.svg">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
 
 <header class="topbar">
   <div class="brand">
-    <span class="globe" aria-hidden="true">🌍</span>
+    <svg class="logo" viewBox="0 0 32 32" aria-hidden="true">
+      <g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <circle cx="15" cy="15" r="11.6"/>
+        <ellipse cx="15" cy="15" rx="5.4" ry="11.6" stroke-width="1.5"/>
+        <path d="M4.2 11h21.6M4.2 19h21.6" stroke-width="1.5"/>
+      </g>
+      <circle cx="24" cy="24" r="8.4" fill="var(--bg-2)"/>
+      <circle cx="24" cy="24" r="6.6" fill="var(--accent)"/>
+      <path d="m20.9 24.2 2.2 2.2 4.1-4.7" fill="none" stroke="var(--bg-2)" stroke-width="2.1"
+            stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
     <h1>Earth<span>Visited</span></h1>
   </div>
   <div class="topbar-actions">

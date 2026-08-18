@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="EarthVisited">
+  <g fill="none" stroke="#e8eefc" stroke-width="2" stroke-linecap="round">
+    <circle cx="15" cy="15" r="11.6"/>
+    <ellipse cx="15" cy="15" rx="5.4" ry="11.6" stroke-width="1.5"/>
+    <path d="M4.2 11h21.6M4.2 19h21.6" stroke-width="1.5"/>
+  </g>
+  <circle cx="24" cy="24" r="8.4" fill="#0b1220"/>
+  <circle cx="24" cy="24" r="6.6" fill="#34d399"/>
+  <path d="m20.9 24.2 2.2 2.2 4.1-4.7" fill="none" stroke="#06231a" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
