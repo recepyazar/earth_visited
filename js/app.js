@@ -11,6 +11,7 @@
   const STORE_KEY = 'earthvisited:v1';
   const PREF_KEY = 'earthvisited:prefs';
   const DOT_AREA = 6; // entities smaller than this get a clickable dot
+  const DRAG_SLOP = 4; // px of movement before a press counts as a pan, not a tap
   const MAX_ZOOM = 40;
 
   const W = WORLD.w;
@@ -195,7 +196,6 @@
 
     scene.append(decorG, landG, dotG);
     map.appendChild(scene);
-    map.addEventListener('click', onMapClick);
     map.addEventListener('pointermove', onMapHover);
     map.addEventListener('pointerleave', hideTip);
   }
@@ -215,6 +215,7 @@
   const pointers = new Map();
   let dragged = 0;
   let pinchStart = null;
+  let pressCode = null;
 
   function applyView() {
     view.x = Math.min(0, Math.max(W - W * view.k, view.x));
@@ -252,14 +253,15 @@
     );
 
     map.addEventListener('pointerdown', (e) => {
-      map.setPointerCapture(e.pointerId);
       pointers.set(e.pointerId, e);
       dragged = 0;
+      // Remember what was under the finger/cursor: the toggle happens on pointerup,
+      // because capturing the pointer for panning would retarget a later click event.
+      pressCode = pointers.size === 1 ? (e.target.dataset && e.target.dataset.code) || null : null;
       if (pointers.size === 2) {
         const [a, b] = [...pointers.values()];
         pinchStart = { dist: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY), k: view.k };
       }
-      map.classList.add('dragging');
     });
 
     map.addEventListener('pointermove', (e) => {
@@ -282,6 +284,10 @@
       const sx = (e.clientX - prev.clientX) / ctm.a;
       const sy = (e.clientY - prev.clientY) / ctm.d;
       dragged += Math.abs(e.clientX - prev.clientX) + Math.abs(e.clientY - prev.clientY);
+      if (dragged > DRAG_SLOP && !map.hasPointerCapture(e.pointerId)) {
+        map.setPointerCapture(e.pointerId); // only now, so a plain click stays a click
+        map.classList.add('dragging');
+      }
       view.x += sx;
       view.y += sy;
       applyView();
@@ -291,6 +297,8 @@
       pointers.delete(e.pointerId);
       if (pointers.size < 2) pinchStart = null;
       if (!pointers.size) map.classList.remove('dragging');
+      if (e.type === 'pointerup' && pressCode && dragged <= DRAG_SLOP) toggle(pressCode);
+      pressCode = null;
     };
     map.addEventListener('pointerup', end);
     map.addEventListener('pointercancel', end);
@@ -305,12 +313,6 @@
   }
 
   /* ---------------- interaction ---------------- */
-  function onMapClick(e) {
-    if (dragged > 4) return;
-    const code = e.target.dataset && e.target.dataset.code;
-    if (code) toggle(code);
-  }
-
   function onMapHover(e) {
     const code = e.target.dataset && e.target.dataset.code;
     if (!code) return hideTip();
