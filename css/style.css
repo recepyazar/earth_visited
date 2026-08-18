@@ -278,6 +278,7 @@ main {
 .panel {
   display: flex;
   min-width: 0;
+  overflow: hidden; /* score on top, actions pinned at the bottom, the middle scrolls */
   flex-direction: column;
   gap: 12px;
   min-height: 0;
@@ -287,6 +288,25 @@ main {
   background: var(--panel);
 }
 
+.panel-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* room for the scrollbar so it never sits on the content */
+  margin-right: -6px;
+  padding-right: 6px;
+}
+.panel-body::-webkit-scrollbar { width: 8px; }
+.panel-body::-webkit-scrollbar-thumb { background: var(--line); border-radius: 99px; }
+
+.block { display: flex; flex-direction: column; gap: 6px; }
+.section-line { height: 1px; background: var(--line); }
+
+.score { flex: none; }
 .score-main { display: flex; align-items: baseline; gap: 6px; }
 .count { font-size: 40px; font-weight: 750; letter-spacing: -.03em; line-height: 1; }
 .of { font-size: 16px; color: var(--ink-dim); font-weight: 600; }
@@ -310,7 +330,6 @@ main {
 
 .score-sub { margin: 0; font-size: 12.5px; color: var(--ink-dim); }
 
-.brushwrap { margin-top: 2px; }
 .caption {
   font-size: 10px;
   font-weight: 700;
@@ -426,10 +445,7 @@ main {
 .list {
   display: flex;
   flex-direction: column;
-  flex: 1;
-  min-height: 140px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  flex: none;
   border: 1px solid var(--line);
   border-radius: 9px;
   padding: 4px;
@@ -438,6 +454,10 @@ main {
 .list::-webkit-scrollbar-thumb { background: var(--line); border-radius: 99px; border: 3px solid var(--panel); }
 
 .lhead {
+  position: sticky;
+  top: -4px;
+  z-index: 1;
+  background: var(--panel);
   padding: 7px 8px 4px;
   font-size: 11px;
   font-weight: 700;
@@ -495,7 +515,7 @@ main {
 .row.on .nm { font-weight: 600; }
 .empty { order: 2; padding: 18px; text-align: center; color: var(--ink-dim); font-size: 13px; }
 
-.panel-actions { display: grid; gap: 8px; }
+.panel-actions { flex: none; display: grid; gap: 8px; }
 .btn {
   padding: 10px 12px;
   border-radius: 9px;
@@ -533,10 +553,20 @@ main {
 }
 
 @media (max-width: 900px) {
-  main { grid-template-columns: minmax(0, 1fr); padding: 10px; padding-bottom: max(10px, env(safe-area-inset-bottom)); }
-  .mapwrap { min-height: 54vh; }
-  .panel { max-height: none; }
-  .list { max-height: 280px; }
+  html, body { height: auto; }
+  main {
+    display: flex;
+    flex-direction: column;
+    padding: 10px;
+    padding-bottom: max(10px, env(safe-area-inset-bottom));
+  }
+  .stage { flex: none; }
+  .mapwrap { height: 54vh; min-height: 260px; }
+  .panel { flex: none; overflow: visible; }
+  .panel-body { overflow: visible; min-height: 0; margin-right: 0; padding-right: 0; }
+  /* the page scrolls here, so the list keeps its own scroll and the actions stay reachable */
+  .list { max-height: 58vh; overflow-y: auto; overscroll-behavior: contain; }
+  .panel-actions { padding-top: 2px; }
   .topbar { padding: 10px 12px; }
   .zoomctl button { width: 40px; height: 40px; font-size: 17px; }
   .btn { padding: 12px; }

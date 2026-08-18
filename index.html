@@ -71,6 +71,9 @@
       <div class="bar"><i id="barfill"></i></div>
       <p class="score-sub"><span data-i18n="countries">countries visited</span> · <span id="terr">0</span> <span data-i18n="territories">territories</span></p>
 
+    </div>
+
+    <div class="panel-body">
       <div class="tiles">
         <div class="tile">
           <b data-i18n="land">Land area</b>
@@ -85,21 +88,24 @@
           <small id="popAbs"></small>
         </div>
       </div>
+
+      <div class="block">
+        <div class="caption" data-i18n="markAs">Mark as</div>
+        <div class="brush" id="brush" role="group"></div>
+      </div>
+
+      <div class="block">
+        <div class="caption" data-i18n="continents">Filter by continent</div>
+        <div class="regions" id="regions"></div>
+      </div>
+
+      <div class="search">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
+        <input id="search" type="search" autocomplete="off" spellcheck="false" data-i18n-ph="search" placeholder="Search a country…">
+      </div>
+
+      <div class="list" id="list" role="group" aria-label="Countries"></div>
     </div>
-
-    <div class="brushwrap">
-      <div class="caption" data-i18n="markAs">Mark as</div>
-      <div class="brush" id="brush" role="group"></div>
-    </div>
-
-    <div class="regions" id="regions"></div>
-
-    <div class="search">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
-      <input id="search" type="search" autocomplete="off" spellcheck="false" data-i18n-ph="search" placeholder="Search a country…">
-    </div>
-
-    <div class="list" id="list" role="group" aria-label="Countries"></div>
 
     <div class="panel-actions">
       <button id="resetBtn" class="btn" type="button" data-i18n="reset">Reset</button>
