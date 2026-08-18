@@ -13,8 +13,8 @@ import { presimplify, simplify } from 'topojson-simplify';
 import wcRaw from 'world-countries/countries.json' with { type: 'json' };
 
 const WIDTH = 1000; // viewBox width the paths are baked for
-const SIMPLIFY = 0.001; // topojson weight: drops sub-pixel detail before projecting
-const TOL = 0.3; // px: consecutive points closer than this are merged
+const SIMPLIFY = 0.0004; // topojson weight: drops sub-pixel detail before projecting
+const TOL = 0.2; // px: consecutive points closer than this are merged
 const OUT = fileURLToPath(new URL('../js/data.js', import.meta.url));
 
 /* ---------- path serializer: rounds to 0.1px and drops near-duplicate points ---------- */

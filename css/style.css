@@ -20,6 +20,8 @@
   --ocean: #0d1626;
   --land: #22314d;
   --land-hover: #33456a;
+  --border: rgba(206, 221, 247, .3);
+  --border-on: rgba(6, 35, 26, .38);
   --picked: #34d399;
   --picked-2: #10b981;
   --picked-line: #0b1220;
@@ -38,6 +40,8 @@ html[data-theme="light"] {
   --ocean: #dfe8f5;
   --land: #b9c5d8;
   --land-hover: #9fb0ca;
+  --border: rgba(26, 41, 70, .34);
+  --border-on: rgba(255, 255, 255, .5);
   --picked: #0ea472;
   --picked-2: #12b981;
   --picked-line: #ffffff;
@@ -134,15 +138,15 @@ main {
 .land {
   fill: var(--land);
   transition: fill .12s ease, opacity .25s ease;
-  stroke: var(--ocean);
-  stroke-width: .5;
+  stroke: var(--border);
+  stroke-width: .7;
   vector-effect: non-scaling-stroke;
 }
 .land.decor { fill: var(--land); opacity: .55; pointer-events: none; }
 .land.decor.dim { opacity: .12; }
 .land.pickable { cursor: pointer; }
 .land.pickable:hover { fill: var(--land-hover); }
-.land.on { fill: var(--picked); }
+.land.on { fill: var(--picked); stroke: var(--border-on); }
 .land.on:hover { fill: var(--picked-2); }
 .land.hl, .dot.hl { stroke: var(--accent); stroke-width: 2; }
 .land.dim, .dot.dim { opacity: .18; pointer-events: none; }
@@ -151,14 +155,17 @@ main {
 
 .dot {
   fill: var(--land);
-  stroke: var(--ocean);
-  stroke-width: .5;
+  stroke: var(--border);
+  stroke-width: .8;
+  opacity: .62;
   vector-effect: non-scaling-stroke;
   cursor: pointer;
   transition: fill .12s ease, opacity .25s ease;
 }
-.dot:hover { fill: var(--land-hover); }
-.dot.on { fill: var(--picked); }
+.dot:hover { fill: var(--land-hover); opacity: 1; }
+.dot.on { fill: var(--picked); stroke: var(--border-on); opacity: 1; }
+/* invisible, finger-sized target over each micro-state */
+.hit { fill: transparent; pointer-events: all; cursor: pointer; }
 
 /* ---------- map overlays ---------- */
 .zoomctl {
@@ -197,6 +204,40 @@ main {
   transition: opacity .3s;
 }
 .hint.gone { opacity: 0; }
+
+.flash {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100% - 24px);
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  font-size: 14px;
+  pointer-events: none;
+  animation: flashIn .16s ease;
+}
+.flash[hidden] { display: none; }
+.flash b { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.flash span {
+  flex: none;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  padding: 2px 7px;
+  border-radius: 6px;
+}
+.flash span.on { background: var(--picked); color: #06231a; }
+.flash span.off { background: color-mix(in srgb, var(--ink) 12%, transparent); color: var(--ink-dim); }
+@keyframes flashIn { from { opacity: 0; transform: translate(-50%, 6px); } }
 
 .tip {
   position: absolute;
@@ -406,10 +447,22 @@ main {
 }
 
 @media (max-width: 900px) {
-  main { grid-template-columns: minmax(0, 1fr); padding: 10px; }
-  .mapwrap { min-height: 46vh; }
+  main { grid-template-columns: minmax(0, 1fr); padding: 10px; padding-bottom: max(10px, env(safe-area-inset-bottom)); }
+  .mapwrap { min-height: 54vh; }
   .panel { max-height: none; }
-  .list { max-height: 260px; }
+  .list { max-height: 280px; }
+  .topbar { padding: 10px 12px; }
+  .zoomctl button { width: 40px; height: 40px; font-size: 17px; }
+  .btn { padding: 12px; }
+  .row { padding: 9px 8px; }
+  .flash { bottom: 10px; font-size: 15px; }
+  .hint { bottom: auto; top: 10px; left: 10px; right: 10px; text-align: center; }
+}
+
+/* no hover to lean on: the tooltip is useless, the hint sits above the strip */
+@media (hover: none) {
+  .tip { display: none; }
+  .hint { bottom: auto; top: 10px; left: 10px; right: 10px; text-align: center; }
 }
 
 /* ---------- share sheet ---------- */

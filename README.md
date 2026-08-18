@@ -8,6 +8,9 @@ Inspired by [turkeyvisited](https://ozanyerli.github.io/turkeyvisited/), but for
 ## Features
 
 - **Interactive world map** — click a country to toggle it, hover for its name, scroll/pinch to zoom, drag to pan.
+- **Built for touch too** — every tap shows a strip with the flag, the country's name and whether it was added
+  or removed, since phones have no hover; **press and hold** reads a country's name without selecting it; and
+  micro-state markers are sized in screen pixels, so their tap targets stay finger-sized on a small screen.
 - **195 sovereign countries** counted (193 UN members + Vatican City and Palestine), with **42 dependent
   territories** (Greenland, Puerto Rico, Hong Kong, Antarctica…) selectable and counted separately.
 - **Micro-states are clickable** — Singapore, Malta, Monaco, Tuvalu and friends get a dot marker so they are
@@ -73,8 +76,8 @@ npm run build
 ```
 
 It projects Natural Earth 1:50m country polygons with `d3-geo`'s Natural Earth projection into a
-1000 × 520 viewBox, simplifies them (topojson weight `0.001`, then a 0.3 px screen-space filter — roughly
-555 KB of path data, ~150 KB gzipped), and joins each shape to its ISO alpha-2 code, English/Turkish name,
+1000 × 520 viewBox, simplifies them (topojson weight `0.0004`, then a 0.2 px screen-space filter — roughly
+719 KB of path data, ~232 KB gzipped), and joins each shape to its ISO alpha-2 code, English/Turkish name,
 region, flag and UN-membership flag. It also emits a zoom box per continent, percentile-trimmed so that
 outliers (Russia counts as Europe, Hawaii as Oceania) do not stretch a continent across half the map.
 

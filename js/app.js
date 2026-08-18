@@ -12,7 +12,7 @@
   const PREF_KEY = 'earthvisited:prefs';
   const DOT_AREA = 6; // entities smaller than this get a clickable dot
   const DRAG_SLOP = 4; // px of movement before a press counts as a pan, not a tap
-  const MAX_ZOOM = 40;
+  const MAX_ZOOM = 24; // past this the 1:50m coastlines run out of detail
 
   const W = WORLD.w;
   const H = WORLD.h;
@@ -37,6 +37,9 @@
       share: 'Copy link',
       download: 'Download PNG',
       hint: 'Click a country · scroll to zoom · drag to pan',
+      hintTouch: 'Tap a country · hold to see its name · pinch to zoom',
+      added: 'added',
+      removed: 'removed',
       theme: 'Switch theme',
       territory: 'territory',
       noResults: 'No match',
@@ -74,6 +77,9 @@
       share: 'Bağlantıyı kopyala',
       download: "PNG'yi indir",
       hint: 'Ülkeye tıklayın · yakınlaştırmak için kaydırın · sürükleyin',
+      hintTouch: 'Ülkeye dokunun · ismi için basılı tutun · parmakla yakınlaştırın',
+      added: 'eklendi',
+      removed: 'çıkarıldı',
       theme: 'Temayı değiştir',
       territory: 'bölge',
       noResults: 'Sonuç yok',
@@ -211,6 +217,8 @@
     const landG = document.createElementNS(SVG_NS, 'g');
     const dotG = document.createElementNS(SVG_NS, 'g');
     dotG.setAttribute('id', 'dots');
+    const hitG = document.createElementNS(SVG_NS, 'g');
+    hitG.setAttribute('id', 'hits');
 
     for (const f of FEATURES) {
       let shape;
@@ -227,6 +235,14 @@
         dot.setAttribute('r', 2.6);
         dot.setAttribute('class', 'dot');
         dot.dataset.code = f.c;
+        const hit = document.createElementNS(SVG_NS, 'circle');
+        hit.setAttribute('cx', f.x);
+        hit.setAttribute('cy', f.y);
+        hit.setAttribute('r', 7);
+        hit.setAttribute('class', 'hit');
+        hit.dataset.code = f.c;
+        hitG.appendChild(hit);
+        els[f.c] = Object.assign(els[f.c] || {}, { hit });
         dotG.appendChild(dot);
         if (!shape) shape = dot;
         else els[f.c] = { extra: dot };
@@ -235,7 +251,7 @@
       els[f.c] = Object.assign(els[f.c] || {}, { shape });
     }
 
-    scene.append(decorG, landG, dotG);
+    scene.append(decorG, landG, dotG, hitG);
     map.appendChild(scene);
     map.addEventListener('pointermove', onMapHover);
     map.addEventListener('pointerleave', hideTip);
@@ -243,7 +259,7 @@
 
   function shapesOf(code) {
     const e = els[code];
-    return e ? [e.shape, e.extra].filter(Boolean) : [];
+    return e ? [e.shape, e.extra, e.hit].filter(Boolean) : [];
   }
 
   function paintShape(code) {
@@ -257,13 +273,25 @@
   let dragged = 0;
   let pinchStart = null;
   let pressCode = null;
+  let pressTimer = null;
+  let previewed = false; // a long press showed the name, so the release must not toggle
 
   function applyView() {
     view.x = Math.min(0, Math.max(W - W * view.k, view.x));
     view.y = Math.min(0, Math.max(H - H * view.k, view.y));
     scene.setAttribute('transform', `translate(${view.x} ${view.y}) scale(${view.k})`);
-    const r = Math.max(0.5, 2.6 / view.k);
-    for (const dot of map.querySelectorAll('#dots circle')) dot.setAttribute('r', r);
+    sizeMarkers();
+  }
+
+  // Micro-state dots are sized in screen pixels, not map units: on a phone the whole
+  // world is ~390px wide, so a fixed radius would shrink to a few pixels there.
+  function sizeMarkers() {
+    const pxPerUnit = ((map.getBoundingClientRect().width || W) / W) * view.k;
+    if (!pxPerUnit) return;
+    const dotR = Math.min(13, 3.6 / pxPerUnit);
+    const hitR = Math.min(24, 9 / pxPerUnit);
+    for (const dot of map.querySelectorAll('#dots circle')) dot.setAttribute('r', dotR);
+    for (const hit of map.querySelectorAll('#hits circle')) hit.setAttribute('r', hitR);
   }
 
   function svgPoint(evt) {
@@ -299,6 +327,15 @@
       // Remember what was under the finger/cursor: the toggle happens on pointerup,
       // because capturing the pointer for panning would retarget a later click event.
       pressCode = pointers.size === 1 ? (e.target.dataset && e.target.dataset.code) || null : null;
+      previewed = false;
+      clearTimeout(pressTimer);
+      if (pressCode) {
+        pressTimer = setTimeout(() => {
+          previewed = true;
+          flash(pressCode);
+          if (navigator.vibrate) navigator.vibrate(8);
+        }, 420);
+      }
       if (pointers.size === 2) {
         const [a, b] = [...pointers.values()];
         pinchStart = { dist: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY), k: view.k };
@@ -325,6 +362,7 @@
       const sx = (e.clientX - prev.clientX) / ctm.a;
       const sy = (e.clientY - prev.clientY) / ctm.d;
       dragged += Math.abs(e.clientX - prev.clientX) + Math.abs(e.clientY - prev.clientY);
+      if (dragged > DRAG_SLOP) clearTimeout(pressTimer);
       if (dragged > DRAG_SLOP && !map.hasPointerCapture(e.pointerId)) {
         map.setPointerCapture(e.pointerId); // only now, so a plain click stays a click
         map.classList.add('dragging');
@@ -335,11 +373,13 @@
     });
 
     const end = (e) => {
+      clearTimeout(pressTimer);
       pointers.delete(e.pointerId);
       if (pointers.size < 2) pinchStart = null;
       if (!pointers.size) map.classList.remove('dragging');
-      if (e.type === 'pointerup' && pressCode && dragged <= DRAG_SLOP) toggle(pressCode);
+      if (e.type === 'pointerup' && pressCode && dragged <= DRAG_SLOP && !previewed) toggle(pressCode);
       pressCode = null;
+      previewed = false;
     };
     map.addEventListener('pointerup', end);
     map.addEventListener('pointercancel', end);
@@ -375,6 +415,27 @@
     tip.hidden = true;
   }
 
+  let flashTimer;
+  // Touch screens have no hover, so name feedback rides along with the tap.
+  function flash(code, state) {
+    const f = byCode.get(code);
+    if (!f) return;
+    const el = $('flash');
+    el.replaceChildren();
+    const name = document.createElement('b');
+    name.textContent = `${f.g ? f.g + ' ' : ''}${nameOf(f)}`;
+    el.appendChild(name);
+    if (state !== undefined) {
+      const tag = document.createElement('span');
+      tag.className = state ? 'on' : 'off';
+      tag.textContent = state ? t('added') : t('removed');
+      el.appendChild(tag);
+    }
+    el.hidden = false;
+    clearTimeout(flashTimer);
+    flashTimer = setTimeout(() => (el.hidden = true), state === undefined ? 1800 : 1400);
+  }
+
   function toggle(code) {
     if (!byCode.has(code)) return;
     if (picked.has(code)) picked.delete(code);
@@ -385,6 +446,7 @@
       row.classList.toggle('on', picked.has(code));
       row.setAttribute('aria-pressed', String(picked.has(code)));
     }
+    flash(code, picked.has(code));
     updateScore();
     updateHeads();
     save();
@@ -763,6 +825,7 @@
     for (const el of document.querySelectorAll('[data-i18n]')) el.textContent = t(el.dataset.i18n);
     for (const el of document.querySelectorAll('[data-i18n-ph]')) el.placeholder = t(el.dataset.i18nPh);
     for (const el of document.querySelectorAll('[data-i18n-title]')) el.title = t(el.dataset.i18nTitle);
+    if (matchMedia('(hover: none)').matches) $('hint').textContent = t('hintTouch');
     $('langBtn').textContent = lang === 'en' ? 'TR' : 'EN';
     $('langBtn').title = lang === 'en' ? 'Türkçe' : 'English';
     buildList();
@@ -824,6 +887,7 @@
       savePrefs();
       applyTheme();
     };
+    addEventListener('resize', sizeMarkers);
     addEventListener('hashchange', () => {
       const m = location.hash.match(/^#v1=([\w-]+)/);
       const codes = m && decodeShare(m[1]);
