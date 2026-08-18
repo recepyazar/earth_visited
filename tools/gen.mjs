@@ -7,7 +7,7 @@
 // Run:  npm install && npm run build
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { geoNaturalEarth1, geoPath } from 'd3-geo';
+import { geoNaturalEarth1, geoPath, geoCentroid } from 'd3-geo';
 import { feature } from 'topojson-client';
 import { presimplify, simplify } from 'topojson-simplify';
 import wcRaw from 'world-countries/countries.json' with { type: 'json' };
@@ -21,6 +21,8 @@ const WIDTH = 1000; // viewBox width the paths are baked for
 const SIMPLIFY = 0.0004; // topojson weight: drops sub-pixel detail before projecting
 const TOL = 0.2; // px: consecutive points closer than this are merged
 const OUT = fileURLToPath(new URL('../js/data.js', import.meta.url));
+const OUT_GLOBE = fileURLToPath(new URL('../js/globe-data.js', import.meta.url));
+const GLOBE_SIMPLIFY = 0.005; // the globe is drawn small, so it can be coarser than the map
 
 /* ---------- path serializer: rounds to 0.1px and drops near-duplicate points ---------- */
 function makeCtx(tol, dec = 1) {
@@ -235,6 +237,71 @@ const feats = [...out.values()].sort((a, b) => b.a - a.a);
 const sovereign = feats.filter((f) => f.s === 1 || f.s === 3);
 const missing = wcRaw.filter((c) => isSovereign(c) && !out.has(c.cca2)).map((c) => c.cca2);
 
+/* ---------- globe geometry ---------- */
+// The map paths are baked into the flat projection, so the globe needs the raw
+// lon/lat rings. Delta-encoded hundredths of a degree keeps the file small; it is
+// only fetched when someone actually switches to the globe.
+const globeTopo = simplify(presimplify(JSON.parse(readFileSync(topoPath, 'utf8'))), GLOBE_SIMPLIFY);
+const globeFc = feature(globeTopo, globeTopo.objects.countries);
+
+const codeOfGeometry = (geo) => {
+  const rule = SPECIAL[geo.properties.name];
+  if (rule?.decor) return null;
+  if (rule?.merge) return rule.merge;
+  if (rule?.own) return rule.own.c;
+  return byN3.get(String(geo.id).padStart(3, '0'))?.cca2 || null;
+};
+
+const encodeRing = (ring) => {
+  let px = 0;
+  let py = 0;
+  const out = [];
+  for (const [lon, lat] of ring) {
+    const x = Math.round(lon * 100);
+    const y = Math.round(lat * 100);
+    out.push(x - px, y - py);
+    px = x;
+    py = y;
+  }
+  return out.join(',');
+};
+
+// code -> polygons -> rings. The nesting has to survive: on a sphere a hole ring
+// read as its own polygon has the opposite winding, which d3 reads as "everything
+// except this shape" — one stray hole would paint the whole globe.
+const globe = new Map();
+let globeRings = 0;
+for (const geo of globeFc.features) {
+  const code = codeOfGeometry(geo);
+  if (!code) continue;
+  const polys = geo.geometry.type === 'Polygon' ? [geo.geometry.coordinates] : geo.geometry.coordinates;
+  for (const poly of polys) {
+    const rings = poly.filter((ring) => ring.length >= 4).map(encodeRing);
+    if (!rings.length) continue;
+    if (!globe.has(code)) globe.set(code, []);
+    globe.get(code).push(rings);
+    globeRings += rings.length;
+  }
+}
+
+// lon/lat centroid per entity: where to put the marker for countries too small to
+// draw, and where to spin the globe when one is picked from the list
+const globeCentroids = {};
+for (const geo of globeFc.features) {
+  const code = codeOfGeometry(geo);
+  if (!code || globeCentroids[code]) continue;
+  const [lon, lat] = geoCentroid(geo);
+  if (Number.isFinite(lon) && Number.isFinite(lat)) globeCentroids[code] = [round1(lon), round1(lat)];
+}
+for (const { a2, lon, lat } of EXTRA_POINTS) globeCentroids[a2] ??= [lon, lat];
+
+const globeJs =
+  `// GENERATED FILE — do not edit. Run \`npm run build\` in tools/.\n` +
+  `// Country outlines in lon/lat for the globe view: rings of delta-encoded\n` +
+  `// hundredths of a degree. Loaded on demand by js/globe.js.\n` +
+  `window.GLOBE_DATA = ${JSON.stringify({ polys: Object.fromEntries(globe), at: globeCentroids })};\n`;
+writeFileSync(OUT_GLOBE, globeJs);
+
 /* ---------- region view boxes ---------- */
 // Box the map zooms to when a continent is picked. Percentile-trimmed, because a
 // handful of outliers (Russia counts as Europe, Hawaii as Oceania) would otherwise
@@ -300,3 +367,4 @@ console.log(`no population  ${feats.filter((f) => !f.p).map((f) => f.c).join(', 
 console.log(`share order    ${order.length} slots (appended: ${SHARE_APPEND.join(', ') || 'none'})`);
 console.log(`languages      en + ${Object.keys(LANGS).join(', ')}`);
 console.log(`data.js        ${Math.round(js.length / 1024)} KB`);
+console.log(`globe-data.js  ${Math.round(globeJs.length / 1024)} KB (${globe.size} entities, ${globeRings} rings)`);

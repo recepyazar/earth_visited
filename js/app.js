@@ -64,6 +64,8 @@
   let resetArmed = false;
   let resetTimer;
   let animTimer;
+  let mode = 'map'; // which view is on screen: 'map' | 'globe'
+  let globeLoading = null; // promise while the globe bundle is loading
   let cardSize = 'link';
   let cardBlob = null; // PNG for the size currently previewed
 
@@ -151,7 +153,7 @@
 
   function savePrefs() {
     try {
-      localStorage.setItem(PREF_KEY, JSON.stringify({ lang, theme, colors }));
+      localStorage.setItem(PREF_KEY, JSON.stringify({ lang, theme, colors, view: mode }));
     } catch { /* private mode */ }
   }
 
@@ -190,10 +192,12 @@
     lang = known(saved?.lang) ? saved.lang : known(guess) ? guess : 'en';
     theme = ['dark', 'light', 'auto'].includes(saved?.theme) ? saved.theme : 'auto';
     colors = saved && typeof saved.colors === 'object' && saved.colors ? { ...saved.colors } : {};
+    mode = saved?.view === 'globe' ? 'globe' : 'map';
     // ?lang=de / ?theme=light let a shared link pick how it opens
     const q = new URLSearchParams(location.search);
     if (known(q.get('lang'))) lang = q.get('lang');
     if (['dark', 'light', 'auto'].includes(q.get('theme'))) theme = q.get('theme');
+    if (q.get('view') === 'globe' || q.get('view') === 'map') mode = q.get('view');
   }
 
   /* ---------------- map ---------------- */
@@ -385,9 +389,10 @@
     map.addEventListener('pointerup', end);
     map.addEventListener('pointercancel', end);
 
-    $('zoomIn').onclick = () => zoomAt(W / 2, H / 2, 1.6);
-    $('zoomOut').onclick = () => zoomAt(W / 2, H / 2, 1 / 1.6);
+    $('zoomIn').onclick = () => (mode === 'globe' ? Globe.zoomBy(1.5) : zoomAt(W / 2, H / 2, 1.6));
+    $('zoomOut').onclick = () => (mode === 'globe' ? Globe.zoomBy(1 / 1.5) : zoomAt(W / 2, H / 2, 1 / 1.6));
     $('zoomReset').onclick = () => {
+      if (mode === 'globe') return Globe.reset();
       view.k = 1;
       view.x = view.y = 0;
       applyView();
@@ -398,17 +403,23 @@
   function onMapHover(e) {
     const code = e.target.dataset && e.target.dataset.code;
     if (!code) return hideTip();
+    showTip(code, e.clientX, e.clientY);
+  }
+
+  // shared by the flat map and the globe
+  function showTip(code, clientX, clientY) {
     const f = byCode.get(code);
+    if (!f) return hideTip();
     const rect = mapwrap.getBoundingClientRect();
     tip.replaceChildren(flagNode(f, 'flag tipflag'), nameOf(f));
     if (f.s === 2) {
-      const s = document.createElement('small');
-      s.textContent = t('territory');
-      tip.appendChild(s);
+      const small = document.createElement('small');
+      small.textContent = t('territory');
+      tip.appendChild(small);
     }
     tip.hidden = false;
-    tip.style.left = `${e.clientX - rect.left}px`;
-    tip.style.top = `${e.clientY - rect.top}px`;
+    tip.style.left = `${clientX - rect.left}px`;
+    tip.style.top = `${clientY - rect.top}px`;
   }
 
   function hideTip() {
@@ -445,6 +456,7 @@
     paintShape(code);
     paintRow(code);
     flash(code, next);
+    redrawGlobe();
     updateScore();
     updateHeads();
     save();
@@ -565,6 +577,11 @@
     }
     for (const p of map.querySelectorAll('.decor')) p.classList.toggle('dim', !!activeRegion);
     focusBox(activeRegion ? REGION_BOX[activeRegion] : null);
+    if (mode === 'globe' && window.Globe && Globe.mounted) {
+      if (activeRegion) Globe.spinTo(regionAnchor(activeRegion), 1.35);
+      else Globe.reset();
+      Globe.render();
+    }
     renderRegions();
     filterList($('search').value);
     list.scrollTop = 0;
@@ -663,6 +680,99 @@
 
     $('regions').replaceChildren(...chips);
   }
+
+  /* ---------------- globe ---------------- */
+  const GLOBE_FILES = ['js/vendor/d3-array-shim.js', 'js/vendor/d3-geo.min.js', 'js/globe-data.js', 'js/globe.js'];
+
+  function loadScript(src) {
+    return new Promise((resolve, reject) => {
+      const el = document.createElement('script');
+      el.src = src;
+      el.onload = resolve;
+      el.onerror = () => reject(new Error(src));
+      document.head.appendChild(el);
+    });
+  }
+
+  // ~310 KB of geometry and d3-geo, fetched the first time someone asks for the
+  // globe. Everyone who asks while it is in flight waits on the same promise
+  // instead of being told "no".
+  async function ensureGlobe() {
+    if (window.Globe && window.GLOBE_DATA) return true;
+    if (!globeLoading) {
+      toast(t('loading'));
+      globeLoading = (async () => {
+        for (const src of GLOBE_FILES) await loadScript(src);
+        return true;
+      })().catch(() => {
+        globeLoading = null;
+        toast(t('copyFail'));
+        return false;
+      });
+    }
+    return globeLoading;
+  }
+
+  function globeOptions() {
+    return {
+      colorOf: (code) => (marks.has(code) ? cssVar(`--lv${marks.get(code)}`) : null),
+      dimmed: (code) => !!activeRegion && byCode.get(code)?.r !== activeRegion,
+      isMarked: (code) => marks.has(code),
+      markerCodes: FEATURES.filter((f) => f.a < DOT_AREA).map((f) => f.c),
+      palette: () => ({
+        ocean: cssVar('--ocean'),
+        land: cssVar('--land'),
+        border: cssVar('--border'),
+        line: cssVar('--line'),
+      }),
+      onPick: (code) => toggle(code),
+      onHover: (code, e) => {
+        if (!code || !e) return hideTip();
+        showTip(code, e.clientX, e.clientY);
+      },
+    };
+  }
+
+  async function setView(next) {
+    if (next === 'globe' && !(await ensureGlobe())) return;
+    mode = next;
+    savePrefs();
+    const onGlobe = mode === 'globe';
+    $('map').hidden = onGlobe;
+    $('globe').hidden = !onGlobe;
+    $('viewMap').classList.toggle('on', !onGlobe);
+    $('viewGlobe').classList.toggle('on', onGlobe);
+    $('hint').textContent = onGlobe ? t('hintGlobe') : matchMedia('(hover: none)').matches ? t('hintTouch') : t('hint');
+    hideTip();
+    if (onGlobe) {
+      if (!Globe.mounted) Globe.mount($('globe'), globeOptions());
+      Globe.resize();
+      if (activeRegion) Globe.spinTo(regionAnchor(activeRegion), 1.35);
+    }
+  }
+
+  // rough centre of a continent: the marked-or-not country closest to its box centre
+  function regionAnchor(region) {
+    const box = REGION_BOX[region];
+    if (!box) return null;
+    const cx = (box[0] + box[2]) / 2;
+    const cy = (box[1] + box[3]) / 2;
+    let best = null;
+    let bestD = Infinity;
+    for (const f of FEATURES) {
+      if (f.r !== region || !f.a) continue;
+      const d = (f.x - cx) ** 2 + (f.y - cy) ** 2;
+      if (d < bestD) {
+        bestD = d;
+        best = f.c;
+      }
+    }
+    return best;
+  }
+
+  const redrawGlobe = () => {
+    if (mode === 'globe' && window.Globe && Globe.mounted) Globe.render();
+  };
 
   /* ---------------- share card ---------------- */
   const CARD_SIZES = [
@@ -896,7 +1006,7 @@
     for (const el of document.querySelectorAll('[data-i18n-ph]')) el.placeholder = t(el.dataset.i18nPh);
     for (const el of document.querySelectorAll('[data-i18n-title]')) el.title = t(el.dataset.i18nTitle);
     if (resetArmed) disarmReset();
-    if (matchMedia('(hover: none)').matches) $('hint').textContent = t('hintTouch');
+    $('hint').textContent = mode === 'globe' ? t('hintGlobe') : matchMedia('(hover: none)').matches ? t('hintTouch') : t('hint');
     buildList();
     updateScore();
     if ($('settings').open) renderSettings();
@@ -917,6 +1027,7 @@
     const resolved = theme === 'auto' ? (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark') : theme;
     document.documentElement.dataset.theme = resolved;
     applyColors();
+    redrawGlobe();
   }
 
   // Remember what the stylesheet says before any override, so "reset" can restore it.
@@ -994,6 +1105,7 @@
 
   // colours live in CSS variables, so only the pieces drawn from JS need a nudge
   function repaintLevelColors() {
+    redrawGlobe();
     renderBrush(lastCounts);
     if ($('sheet').open) renderCard();
   }
@@ -1036,6 +1148,13 @@
       updateScore();
       save();
     };
+    $('viewMap').onclick = () => setView('map');
+    $('viewGlobe').onclick = () => setView('globe');
+    if (mode === 'globe') {
+      mode = 'map'; // setView does the switching work, including the lazy load
+      setView('globe');
+    }
+
     $('settingsBtn').onclick = () => {
       renderSettings();
       const dlg = $('settings');

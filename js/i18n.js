@@ -79,6 +79,10 @@ window.I18N = {
       colors: 'Marker colours',
       resetColors: 'Reset to defaults',
       close: 'Close',
+      hintGlobe: 'Click a country · drag to spin · scroll to zoom',
+      viewMap: 'Flat map',
+      viewGlobe: 'Globe',
+      loading: 'Loading the globe…',
     },
 
     tr: {
@@ -133,6 +137,10 @@ window.I18N = {
       colors: 'İşaret renkleri',
       resetColors: 'Varsayılan renkler',
       close: 'Kapat',
+      hintGlobe: 'Ülkeye tıklayın · döndürmek için sürükleyin · yakınlaştırmak için kaydırın',
+      viewMap: 'Düz harita',
+      viewGlobe: 'Küre',
+      loading: 'Küre yükleniyor…',
     },
 
     de: {
@@ -187,6 +195,10 @@ window.I18N = {
       colors: 'Markierungsfarben',
       resetColors: 'Standardfarben',
       close: 'Schließen',
+      hintGlobe: 'Land anklicken · zum Drehen ziehen · scrollen zum Zoomen',
+      viewMap: 'Flache Karte',
+      viewGlobe: 'Globus',
+      loading: 'Globus wird geladen…',
     },
 
     es: {
@@ -241,6 +253,10 @@ window.I18N = {
       colors: 'Colores de marcado',
       resetColors: 'Restaurar colores',
       close: 'Cerrar',
+      hintGlobe: 'Haz clic en un país · arrastra para girar · rueda para acercar',
+      viewMap: 'Mapa plano',
+      viewGlobe: 'Globo',
+      loading: 'Cargando el globo…',
     },
 
     fr: {
@@ -295,6 +311,10 @@ window.I18N = {
       colors: 'Couleurs des marques',
       resetColors: 'Couleurs par défaut',
       close: 'Fermer',
+      hintGlobe: 'Cliquez sur un pays · glissez pour tourner · molette pour zoomer',
+      viewMap: 'Carte plate',
+      viewGlobe: 'Globe',
+      loading: 'Chargement du globe…',
     },
 
     it: {
@@ -349,6 +369,10 @@ window.I18N = {
       colors: 'Colori dei segni',
       resetColors: 'Colori predefiniti',
       close: 'Chiudi',
+      hintGlobe: 'Clicca un paese · trascina per ruotare · scorri per ingrandire',
+      viewMap: 'Mappa piatta',
+      viewGlobe: 'Globo',
+      loading: 'Caricamento del globo…',
     },
 
     pt: {
@@ -403,6 +427,10 @@ window.I18N = {
       colors: 'Cores das marcas',
       resetColors: 'Cores padrão',
       close: 'Fechar',
+      hintGlobe: 'Clique num país · arraste para girar · role para ampliar',
+      viewMap: 'Mapa plano',
+      viewGlobe: 'Globo',
+      loading: 'Carregando o globo…',
     },
 
     ru: {
@@ -457,6 +485,10 @@ window.I18N = {
       colors: 'Цвета меток',
       resetColors: 'Цвета по умолчанию',
       close: 'Закрыть',
+      hintGlobe: 'Нажмите на страну · тяните, чтобы вращать · колесо — масштаб',
+      viewMap: 'Плоская карта',
+      viewGlobe: 'Глобус',
+      loading: 'Загрузка глобуса…',
     },
   },
 };

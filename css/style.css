@@ -705,3 +705,52 @@ img.flag { width: 20px; height: 14px; object-fit: cover; border-radius: 2px; }
 
 .btn.danger { border-color: #ef4444; color: #ef4444; }
 .btn.danger:hover { background: color-mix(in srgb, #ef4444 12%, transparent); }
+
+/* ---------- globe view ---------- */
+/* absolutely positioned so the canvas cannot drive the wrapper's height —
+   a percentage-height canvas in an auto-height parent grows without bound */
+#globe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  cursor: grab;
+  touch-action: none;
+}
+#globe.dragging { cursor: grabbing; }
+/* `display` from the id rules beats the hidden attribute, so say it explicitly */
+#globe[hidden], #map[hidden] { display: none; }
+
+.viewswitch {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  box-shadow: var(--shadow);
+}
+.vbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 30px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink-dim);
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.vbtn:hover { color: var(--ink); }
+.vbtn.on { color: var(--ink); background: color-mix(in srgb, var(--ink) 12%, transparent); }
+@media (max-width: 900px) {
+  /* the zoom buttons own the bottom-right corner, the hint sits on top */
+  .viewswitch { top: auto; bottom: 10px; left: 10px; right: auto; }
+  .vbtn { width: 40px; height: 38px; }
+}

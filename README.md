@@ -36,6 +36,10 @@ Inspired by [turkeyvisited](https://ozanyerli.github.io/turkeyvisited/), but for
 - **Settings** — one button in the header opens language, theme (dark / light / follow the system) and a
   colour picker for each of the four mark types. Everything is remembered, and the share cards pick up your
   colours.
+- **Globe view** — a switch on the map turns the flat map into a rotatable sphere: drag to spin, scroll or
+  pinch to zoom, click a country to mark it, with the same colours, dots and continent filter. It is drawn on
+  a canvas with `d3-geo`, and its geometry (`js/globe-data.js`, ~310 KB with the library) is fetched only when
+  someone actually switches to it, so the flat map stays as light as it was.
 - **Share sheet** — one *Share* button opens a card preview in three formats: **landscape** 1200×630 (link
   previews, X, Facebook, LinkedIn), **square** 1080×1080 (Instagram/feed) and **story** 1080×1920, which
   also lists the countries by name. The card carries the map, your count, the percentage and a per-continent
@@ -64,6 +68,7 @@ For GitHub Pages: push the repo and set **Settings → Pages → Deploy from a b
 | `#v1=<code>` | Loads a shared selection |
 | `?lang=tr`, `?lang=de`, … | Opens in that language (en, tr, de, es, fr, it, pt, ru) |
 | `?theme=light` / `?theme=dark` / `?theme=auto` | Opens in that theme |
+| `?view=globe` / `?view=map` | Opens on the globe or the flat map |
 
 ## Layout
 
@@ -75,6 +80,9 @@ assets/logo.svg     brand mark — globe with a check badge
 assets/fonts/       Twemoji Country Flags webfont (flag glyphs for Windows)
 assets/favicon.svg  simplified mark for tab-sized rendering
 assets/flags/       flags with no emoji, as SVG (Northern Cyprus)
+js/globe.js         globe renderer (canvas + d3-geo), loaded on demand
+js/globe-data.js    GENERATED — country outlines in lon/lat for the globe
+js/vendor/          d3-geo build plus the three d3-array helpers it needs
 js/i18n.js          interface strings for the eight languages
 js/card.js          share-card renderer (SVG, one layout per format)
 js/app.js           map rendering, selection, zoom/pan, i18n, share sheet
@@ -127,3 +135,5 @@ other glyph stays on the system font.
 - [World Bank](https://data.worldbank.org/indicator/SP.POP.TOTL) — population (SP.POP.TOTL, 2025 values), CC-BY 4.0.
 - [Twemoji Country Flags](https://github.com/talkjs/country-flag-emoji-polyfill) — flag webfont; packaging MIT
   (TalkJS), artwork CC-BY 4.0 (Twitter/Twemoji).
+- [d3-geo](https://github.com/d3/d3-geo) — orthographic projection, spherical clipping and hit testing for the
+  globe view, ISC.
