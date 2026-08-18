@@ -113,17 +113,31 @@ const out = new Map();
 const decor = [];
 const unmatched = [];
 
+// The box of a country's *largest* landmass — overseas bits (French Guiana for
+// France, Guam for the US) would otherwise smear a continent across the map.
+const mainBox = (geo) => {
+  const polys = geo.geometry.type === 'Polygon' ? [geo.geometry.coordinates] : geo.geometry.coordinates;
+  let best = null;
+  for (const coordinates of polys) {
+    const part = { type: 'Polygon', coordinates };
+    const area = Math.abs(measure.area(part));
+    if (!best || area > best.area) best = { area, bounds: measure.bounds(part) };
+  }
+  return best;
+};
+
 const add = (meta, geo) => {
   const d = toPath(geo);
   const area = Math.round(Math.abs(measure.area(geo)) * 10) / 10;
   const [cx, cy] = measure.centroid(geo);
+  const main = mainBox(geo);
   const rec = out.get(meta.c);
   if (rec) {
     rec.d += d;
-    if (area > rec.a) Object.assign(rec, { a: area, x: round1(cx), y: round1(cy) });
+    if (area > rec.a) Object.assign(rec, { a: area, x: round1(cx), y: round1(cy), main });
     return;
   }
-  out.set(meta.c, { ...meta, a: area, x: round1(cx), y: round1(cy), d });
+  out.set(meta.c, { ...meta, a: area, x: round1(cx), y: round1(cy), d, main });
 };
 const round1 = (v) => Math.round(v * 10) / 10;
 
@@ -156,17 +170,50 @@ for (const { a2, lon, lat } of EXTRA_POINTS) {
   out.set(a2, { ...metaOf(byA2.get(a2)), a: 0, x: round1(x), y: round1(y), d: '' });
 }
 
-/* ---------- emit ---------- */
 const feats = [...out.values()].sort((a, b) => b.a - a.a);
 const sovereign = feats.filter((f) => f.s === 1);
 const missing = wcRaw.filter((c) => isSovereign(c) && !out.has(c.cca2)).map((c) => c.cca2);
+
+/* ---------- region view boxes ---------- */
+// Box the map zooms to when a continent is picked. Percentile-trimmed, because a
+// handful of outliers (Russia counts as Europe, Hawaii as Oceania) would otherwise
+// stretch a continent's box across half the world.
+const REGIONS = ['Africa', 'Americas', 'Asia', 'Europe', 'Oceania'];
+const pct = (values, p) => {
+  const a = [...values].sort((x, y) => x - y);
+  const i = (a.length - 1) * p;
+  const lo = Math.floor(i);
+  return a[lo] + (a[Math.ceil(i)] - a[lo]) * (i - lo);
+};
+
+const regions = {};
+for (const r of REGIONS) {
+  const inRegion = feats.filter((f) => f.r === r && f.main);
+  const big = inRegion.filter((f) => f.main.area >= 3);
+  const src = (big.length >= 6 ? big : inRegion).map((f) => f.main.bounds);
+  let x0 = pct(src.map((b) => b[0][0]), 0.05);
+  let y0 = pct(src.map((b) => b[0][1]), 0.05);
+  let x1 = pct(src.map((b) => b[1][0]), 0.95);
+  let y1 = pct(src.map((b) => b[1][1]), 0.95);
+  const padX = (x1 - x0) * 0.06 + 8;
+  const padY = (y1 - y0) * 0.06 + 8;
+  x0 = Math.max(0, x0 - padX);
+  y0 = Math.max(0, y0 - padY);
+  x1 = Math.min(WIDTH, x1 + padX);
+  y1 = Math.min(HEIGHT, y1 + padY);
+  regions[r] = [x0, y0, x1, y1].map(round1);
+}
+
+/* ---------- emit ---------- */
+for (const f of feats) delete f.main;
 
 const js =
   `// GENERATED FILE — do not edit. Run \`npm run build\` in tools/ to regenerate.\n` +
   `// Natural Earth 1:50m via world-atlas, metadata via world-countries.\n` +
   `// ${feats.length} selectable entities, of which ${sovereign.length} sovereign countries.\n` +
-  `window.WORLD = ${JSON.stringify({ w: WIDTH, h: HEIGHT, decor, f: feats })};\n`;
+  `window.WORLD = ${JSON.stringify({ w: WIDTH, h: HEIGHT, regions, decor, f: feats })};\n`;
 writeFileSync(OUT, js);
+for (const r of REGIONS) console.log(`region ${r.padEnd(9)} [${regions[r].join(', ')}]`);
 
 console.log(`viewBox        0 0 ${WIDTH} ${HEIGHT}`);
 console.log(`entities       ${feats.length} (${sovereign.length} sovereign, ${feats.length - sovereign.length} territories)`);

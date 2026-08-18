@@ -12,6 +12,11 @@ Inspired by [turkeyvisited](https://ozanyerli.github.io/turkeyvisited/), but for
   territories** (Greenland, Puerto Rico, Hong Kong, Antarctica…) selectable and counted separately.
 - **Micro-states are clickable** — Singapore, Malta, Monaco, Tuvalu and friends get a dot marker so they are
   reachable even at 1× zoom, plus a searchable list for anything easier to find by name.
+- **Selected countries float to the top** of the list, under a `Selected · N` header, so your own map is
+  always the first thing you see.
+- **Continents are filters** — click Africa / Americas / Asia / Europe / Oceania to zoom the map to that
+  continent, dim (and lock) everything outside it, and narrow the list to its countries; the *Whole world*
+  chip or a second click on the active continent clears it. Search stacks on top of the filter.
 - **Progress by region** — Africa, Americas, Asia, Europe, Oceania.
 - **English / Turkish** UI and country names, light / dark theme, both remembered.
 - **Download PNG** — a shareable 2× image of the map with your score.
@@ -59,7 +64,8 @@ npm run build
 It projects Natural Earth 1:50m country polygons with `d3-geo`'s Natural Earth projection into a
 1000 × 520 viewBox, simplifies them (topojson weight `0.001`, then a 0.3 px screen-space filter — roughly
 555 KB of path data, ~150 KB gzipped), and joins each shape to its ISO alpha-2 code, English/Turkish name,
-region, flag and UN-membership flag.
+region, flag and UN-membership flag. It also emits a zoom box per continent, percentile-trimmed so that
+outliers (Russia counts as Europe, Hawaii as Oceania) do not stretch a continent across half the map.
 
 A few choices the generator makes:
 

@@ -21,6 +21,7 @@
   const SOVEREIGN_TOTAL = FEATURES.filter((f) => f.s === 1).length;
   const SHARE_ORDER = FEATURES.map((f) => f.c).sort(); // stable bit order for share links
 
+  const REGION_BOX = WORLD.regions;
   const REGIONS = ['Africa', 'Americas', 'Asia', 'Europe', 'Oceania'];
   const REGION_TOTAL = {};
   for (const r of REGIONS) REGION_TOTAL[r] = FEATURES.filter((f) => f.s === 1 && f.r === r).length;
@@ -44,6 +45,9 @@
       resetAsk: 'Clear all selected countries?',
       saved: 'Image saved',
       exportTitle: 'Countries I have visited',
+      allRegions: 'Whole world',
+      headSel: 'Selected',
+      headRest: 'All countries',
       of: 'of',
       other: 'Other',
     },
@@ -64,6 +68,9 @@
       resetAsk: 'Seçili tüm ülkeler silinsin mi?',
       saved: 'Görsel kaydedildi',
       exportTitle: 'Gezdiğim ülkeler',
+      allRegions: 'Tüm dünya',
+      headSel: 'Seçilenler',
+      headRest: 'Tüm ülkeler',
       of: '/',
       other: 'Diğer',
     },
@@ -81,6 +88,9 @@
   /* ---------------- state ---------------- */
   const picked = new Set();
   const els = {}; // code -> { shape, row }
+  let activeRegion = null; // continent filter, or null for the whole world
+  let regionCounts = {};
+  let animTimer;
 
   const $ = (id) => document.getElementById(id);
   const map = $('map');
@@ -154,6 +164,7 @@
 
   /* ---------------- map ---------------- */
   const scene = document.createElementNS(SVG_NS, 'g');
+  scene.setAttribute('class', 'scene');
 
   function buildMap() {
     map.setAttribute('viewBox', `0 0 ${W} ${H}`);
@@ -345,6 +356,7 @@
       row.setAttribute('aria-pressed', String(picked.has(code)));
     }
     updateScore();
+    updateHeads();
     save();
     if (location.hash) history.replaceState(null, '', location.pathname + location.search);
     $('hint').classList.add('gone');
@@ -372,7 +384,13 @@
       els[f.c] = Object.assign(els[f.c] || {}, { row });
       frag.appendChild(row);
     }
-    list.replaceChildren(frag);
+    const headSel = document.createElement('div');
+    headSel.className = 'lhead sel';
+    headSel.id = 'headSel';
+    const headRest = document.createElement('div');
+    headRest.className = 'lhead';
+    headRest.id = 'headRest';
+    list.replaceChildren(headSel, frag, headRest);
     filterList($('search').value);
   }
 
@@ -385,16 +403,21 @@
 
   function filterList(q) {
     const needle = fold(q.trim());
-    let shown = 0;
+    let onShown = 0;
+    let offShown = 0;
     for (const f of FEATURES) {
       const row = els[f.c]?.row;
       if (!row) continue;
-      const hit = !needle || fold(f.n).includes(needle) || fold(f.t).includes(needle) || f.c.toLowerCase() === needle;
+      const matchesText =
+        !needle || fold(f.n).includes(needle) || fold(f.t).includes(needle) || f.c.toLowerCase() === needle;
+      const hit = matchesText && (!activeRegion || f.r === activeRegion);
       row.hidden = !hit;
-      if (hit) shown++;
+      if (hit) picked.has(f.c) ? onShown++ : offShown++;
     }
+    updateHeads(onShown, offShown);
+
     let empty = list.querySelector('.empty');
-    if (!shown) {
+    if (!onShown && !offShown) {
       if (!empty) {
         empty = document.createElement('p');
         empty.className = 'empty';
@@ -403,6 +426,56 @@
       empty.textContent = t('noResults');
       empty.hidden = false;
     } else if (empty) empty.hidden = true;
+  }
+
+  // Selected rows float to the top via CSS `order`; these two headers label the groups.
+  function updateHeads(onShown, offShown) {
+    if (onShown === undefined) {
+      onShown = offShown = 0;
+      for (const f of FEATURES) {
+        const row = els[f.c]?.row;
+        if (!row || row.hidden) continue;
+        picked.has(f.c) ? onShown++ : offShown++;
+      }
+    }
+    const sel = $('headSel');
+    const rest = $('headRest');
+    if (!sel || !rest) return;
+    sel.textContent = `${t('headSel')} · ${onShown}`;
+    sel.hidden = !onShown;
+    rest.textContent = t('headRest');
+    rest.hidden = !offShown || !onShown;
+  }
+
+  /* ---------------- continent filter ---------------- */
+  function setRegion(r) {
+    activeRegion = activeRegion === r ? null : r;
+    for (const f of FEATURES) {
+      const off = activeRegion && f.r !== activeRegion;
+      for (const s of shapesOf(f.c)) s.classList.toggle('dim', !!off);
+    }
+    for (const p of map.querySelectorAll('.decor')) p.classList.toggle('dim', !!activeRegion);
+    focusBox(activeRegion ? REGION_BOX[activeRegion] : null);
+    renderRegions();
+    filterList($('search').value);
+    list.scrollTop = 0;
+  }
+
+  function focusBox(box) {
+    scene.classList.add('anim');
+    if (!box) {
+      view.k = 1;
+      view.x = view.y = 0;
+    } else {
+      const [x0, y0, x1, y1] = box;
+      const k = Math.min(MAX_ZOOM, Math.max(1, Math.min(W / (x1 - x0), H / (y1 - y0))));
+      view.k = k;
+      view.x = W / 2 - ((x0 + x1) / 2) * k;
+      view.y = H / 2 - ((y0 + y1) / 2) * k;
+    }
+    applyView();
+    clearTimeout(animTimer);
+    animTimer = setTimeout(() => scene.classList.remove('anim'), 450);
   }
 
   /* ---------------- score ---------------- */
@@ -424,19 +497,40 @@
     $('pct').textContent = `${pct}%`;
     $('barfill').style.width = `${(sov / SOVEREIGN_TOTAL) * 100}%`;
 
-    const regions = $('regions');
-    regions.replaceChildren(
-      ...REGIONS.map((r) => {
-        const div = document.createElement('div');
-        div.className = 'region';
-        const b = document.createElement('b');
-        b.textContent = REGION_NAMES[lang][r];
-        const s = document.createElement('span');
-        s.textContent = `${perRegion[r] || 0}/${REGION_TOTAL[r]}`;
-        div.append(b, s);
-        return div;
-      })
-    );
+    regionCounts = perRegion;
+    renderRegions();
+  }
+
+  function renderRegions() {
+    const chips = REGIONS.map((r) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'region';
+      btn.classList.toggle('on', activeRegion === r);
+      btn.setAttribute('aria-pressed', String(activeRegion === r));
+      const b = document.createElement('b');
+      b.textContent = REGION_NAMES[lang][r];
+      const s = document.createElement('span');
+      s.textContent = `${regionCounts[r] || 0}/${REGION_TOTAL[r]}`;
+      btn.append(b, s);
+      btn.onclick = () => setRegion(r);
+      return btn;
+    });
+
+    const all = document.createElement('button');
+    all.type = 'button';
+    all.className = 'region all';
+    all.classList.toggle('on', !activeRegion);
+    all.setAttribute('aria-pressed', String(!activeRegion));
+    const ab = document.createElement('b');
+    ab.textContent = t('allRegions');
+    const as = document.createElement('span');
+    as.textContent = `${$('count').textContent}/${SOVEREIGN_TOTAL}`;
+    all.append(ab, as);
+    all.onclick = () => activeRegion && setRegion(activeRegion);
+    chips.push(all);
+
+    $('regions').replaceChildren(...chips);
   }
 
   /* ---------------- export ---------------- */
