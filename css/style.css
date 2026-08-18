@@ -1,3 +1,13 @@
+/* Windows has no country-flag emoji font, so the regional-indicator range gets
+   its own webfont (Twemoji Country Flags, MIT code / CC-BY 4.0 artwork).
+   unicode-range keeps every other character on the system font. */
+@font-face {
+  font-family: "Twemoji Country Flags";
+  src: url("../assets/fonts/TwemojiCountryFlags.woff2") format("woff2");
+  unicode-range: U+1F1E6-1F1FF;
+  font-display: swap;
+}
+
 /* EarthVisited — layout & theme */
 
 :root {
@@ -331,7 +341,12 @@ main {
 }
 .row[hidden] { display: none; }
 .row:hover { background: color-mix(in srgb, var(--ink) 7%, transparent); }
-.row .flag { font-size: 15px; line-height: 1; width: 20px; }
+.row .flag {
+  font-family: "Twemoji Country Flags", system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1;
+  width: 22px;
+}
 .row .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row .tag { font-size: 10px; color: var(--ink-dim); border: 1px solid var(--line); border-radius: 5px; padding: 1px 4px; }
 .row .box {
@@ -353,7 +368,7 @@ main {
 .row.on .nm { font-weight: 600; }
 .empty { order: 2; padding: 18px; text-align: center; color: var(--ink-dim); font-size: 13px; }
 
-.panel-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.panel-actions { display: grid; gap: 8px; }
 .btn {
   padding: 10px 12px;
   border-radius: 9px;
@@ -446,6 +461,7 @@ main {
 }
 .preview img { max-width: 100%; max-height: 40vh; border-radius: 8px; display: block; }
 
-.sheet-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+.sheet-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 14px; }
+.sheet-actions #copyLink { grid-column: 1 / -1; }
 
 .sheet-note { margin: 12px 0 0; font-size: 11.5px; line-height: 1.45; color: var(--ink-dim); }

@@ -54,6 +54,7 @@ index.html          markup
 css/style.css       theme + layout
 js/data.js          GENERATED — projected map paths and country metadata
 assets/logo.svg     brand mark — globe with a check badge
+assets/fonts/       Twemoji Country Flags webfont (flag glyphs for Windows)
 assets/favicon.svg  simplified mark for tab-sized rendering
 js/card.js          share-card renderer (SVG, one layout per format)
 js/app.js           map rendering, selection, zoom/pan, i18n, share sheet
@@ -85,7 +86,16 @@ A few choices the generator makes:
 - Tuvalu is absent from the 1:50m dataset, so it is added as a marker-only entry.
 - Shapes with no ISO code (Siachen Glacier, Indian Ocean territories) are drawn but not selectable.
 
+## Why the flag webfont
+
+Windows ships no country-flag emoji font, so `🇹🇷` falls back to the letters `TR` there while phones and Macs
+draw the flag. `assets/fonts/TwemojiCountryFlags.woff2` (78 KB) is declared with
+`unicode-range: U+1F1E6-1F1FF`, so browsers download it only for the regional-indicator characters and every
+other glyph stays on the system font.
+
 ## Data sources
 
 - [world-atlas](https://github.com/topojson/world-atlas) — Natural Earth 1:50m, public domain.
 - [world-countries](https://github.com/mledoze/countries) — ISO codes, names and translations, ODbL.
+- [Twemoji Country Flags](https://github.com/talkjs/country-flag-emoji-polyfill) — flag webfont; packaging MIT
+  (TalkJS), artwork CC-BY 4.0 (Twitter/Twemoji).
