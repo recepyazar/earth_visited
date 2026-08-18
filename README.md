@@ -23,12 +23,9 @@ Inspired by [turkeyvisited](https://ozanyerli.github.io/turkeyvisited/), but for
   previews, X, Facebook, LinkedIn), **square** 1080×1080 (Instagram/feed) and **story** 1080×1920, which
   also lists the countries by name. The card carries the map, your count, the percentage and a per-continent
   breakdown, in whatever theme and language the page is using.
-- **Direct sharing** — *Share image* uses the Web Share API, handing the PNG straight to the phone's share
-  sheet (WhatsApp, Instagram, X…) where the browser supports it; otherwise save or copy the card to the
-  clipboard. Buttons for X, WhatsApp, Telegram, Facebook, LinkedIn, Reddit and e-mail open each platform's
-  composer pre-filled with your score and link. Instagram has no web composer at all, so its button switches
-  the card to the square format and either hands the PNG to the native share sheet or saves it and copies the
-  caption ready to paste.
+- **Direct sharing** — *Share image* uses the Web Share API, handing the PNG straight to the device's share
+  sheet, which is where Instagram, WhatsApp, X and the rest already live. Browsers without a share sheet fall
+  back to saving the card or copying it to the clipboard.
 - **Copy link** — your selection is encoded in the URL (`#v1=…`), so a link restores the exact map.
   Selections also persist in `localStorage`. A static `og.png` gives the link a proper preview card.
 

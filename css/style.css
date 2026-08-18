@@ -448,32 +448,4 @@ main {
 
 .sheet-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
 
-.socials { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
-.social {
-  padding: 8px 12px;
-  border-radius: 9px;
-  font-size: 12.5px;
-  font-weight: 700;
-  text-decoration: none;
-  color: #fff;
-  background: #444;
-  transition: filter .15s;
-}
-.social:hover { filter: brightness(1.12); }
-.social.x { background: #14161a; }
-.social.whatsapp { background: #25d366; color: #04231a; }
-.social.telegram { background: #229ed9; }
-.social.facebook { background: #1877f2; }
-.social.linkedin { background: #0a66c2; }
-.social.reddit { background: #ff4500; }
-.social.mail { background: transparent; border: 1px solid var(--line); color: var(--ink-dim); }
-
 .sheet-note { margin: 12px 0 0; font-size: 11.5px; line-height: 1.45; color: var(--ink-dim); }
-.social.instagram {
-  background: linear-gradient(45deg, #f9ce34 4%, #ee2a7b 46%, #6228d7 96%);
-  border: 0;
-  font: inherit;
-  font-size: 12.5px;
-  font-weight: 700;
-  cursor: pointer;
-}
