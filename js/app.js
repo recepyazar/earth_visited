@@ -682,7 +682,15 @@
   }
 
   /* ---------------- globe ---------------- */
-  const GLOBE_FILES = ['js/vendor/d3-array-shim.js', 'js/vendor/d3-geo.min.js', 'js/globe-data.js', 'js/globe.js'];
+  // ?v= keeps a cached stylesheet from ever pairing with a newer script; bump it
+  // in index.html and here together when deploying
+  const ASSET_V = 'v=6';
+  const GLOBE_FILES = [
+    'js/vendor/d3-array-shim.js',
+    'js/vendor/d3-geo.min.js',
+    `js/globe-data.js?${ASSET_V}`,
+    `js/globe.js?${ASSET_V}`,
+  ];
 
   function loadScript(src) {
     return new Promise((resolve, reject) => {
@@ -738,8 +746,12 @@
     mode = next;
     savePrefs();
     const onGlobe = mode === 'globe';
+    // set display inline as well as the attribute: a stale cached stylesheet without
+    // the [hidden] rules would otherwise leave the flat map showing under the globe
     $('map').hidden = onGlobe;
+    $('map').style.display = onGlobe ? 'none' : '';
     $('globe').hidden = !onGlobe;
+    $('globe').style.display = onGlobe ? '' : 'none';
     $('viewMap').classList.toggle('on', !onGlobe);
     $('viewGlobe').classList.toggle('on', onGlobe);
     $('hint').textContent = onGlobe ? t('hintGlobe') : matchMedia('(hover: none)').matches ? t('hintTouch') : t('hint');
