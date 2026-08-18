@@ -46,6 +46,20 @@
       saved: 'Image saved',
       exportTitle: 'Countries I have visited',
       allRegions: 'Whole world',
+      shareOpen: 'Share',
+      shareTitle: 'Share your map',
+      shareImage: 'Share image',
+      saveImage: 'Save image',
+      copyImage: 'Copy image',
+      copiedImage: 'Image copied to clipboard',
+      copyImageFail: 'Copying images is not supported here — save it instead',
+      shareNote: 'Posting to X, Facebook or LinkedIn shares the link. Save or copy the card first if you want the image in the post.',
+      sizeLink: 'Landscape',
+      sizeSquare: 'Square',
+      sizeStory: 'Story',
+      cardTitle: 'Countries I have visited',
+      cardMore: '+{n} more',
+      shareText: "I've visited {n} of the world's {total} countries ({pct}%). How many have you seen?",
       headSel: 'Selected',
       headRest: 'All countries',
       of: 'of',
@@ -69,6 +83,20 @@
       saved: 'Görsel kaydedildi',
       exportTitle: 'Gezdiğim ülkeler',
       allRegions: 'Tüm dünya',
+      shareOpen: 'Paylaş',
+      shareTitle: 'Haritanı paylaş',
+      shareImage: 'Görseli paylaş',
+      saveImage: 'Görseli kaydet',
+      copyImage: 'Görseli kopyala',
+      copiedImage: 'Görsel panoya kopyalandı',
+      copyImageFail: 'Burada görsel kopyalanamıyor — kaydedip kullanabilirsin',
+      shareNote: 'X, Facebook ve LinkedIn bağlantıyı paylaşır. Görselin gönderide çıkması için önce kartı kaydet veya kopyala.',
+      sizeLink: 'Yatay',
+      sizeSquare: 'Kare',
+      sizeStory: 'Hikâye',
+      cardTitle: 'Gezdiğim ülkeler',
+      cardMore: '+{n} ülke daha',
+      shareText: 'Dünyadaki {total} ülkenin {n} tanesini gezdim (%{pct}). Sen kaç ülke gezdin?',
       headSel: 'Seçilenler',
       headRest: 'Tüm ülkeler',
       of: '/',
@@ -91,6 +119,8 @@
   let activeRegion = null; // continent filter, or null for the whole world
   let regionCounts = {};
   let animTimer;
+  let cardSize = 'link';
+  let cardBlob = null; // PNG for the size currently previewed
 
   const $ = (id) => document.getElementById(id);
   const map = $('map');
@@ -533,94 +563,204 @@
     $('regions').replaceChildren(...chips);
   }
 
-  /* ---------------- export ---------------- */
+  /* ---------------- share card ---------------- */
+  const CARD_SIZES = [
+    ['link', 'sizeLink'],
+    ['square', 'sizeSquare'],
+    ['story', 'sizeStory'],
+  ];
+
   function cssVar(name) {
     return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   }
 
-  function buildExportSVG() {
-    const pad = 30;
-    const footer = 118;
-    const width = W + pad * 2;
-    const height = H + pad + footer;
-    const c = {
-      bg: cssVar('--bg-2'),
-      ocean: cssVar('--ocean'),
-      land: cssVar('--land'),
-      on: cssVar('--picked'),
-      ink: cssVar('--ink'),
-      dim: cssVar('--ink-dim'),
-      accent: cssVar('--accent'),
-    };
-
+  function stats() {
     let sov = 0;
     let terr = 0;
+    const per = {};
     for (const code of picked) {
       const f = byCode.get(code);
       if (!f) continue;
-      if (f.s === 1) sov++;
-      else terr++;
+      if (f.s === 1) {
+        sov++;
+        per[f.r] = (per[f.r] || 0) + 1;
+      } else terr++;
     }
-    const pct = Math.round((sov / SOVEREIGN_TOTAL) * 100);
-
-    const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    const parts = [];
-    parts.push(
-      `<svg xmlns="${SVG_NS}" width="${width * 2}" height="${height * 2}" viewBox="0 0 ${width} ${height}">`,
-      `<style>text{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}</style>`,
-      `<rect width="${width}" height="${height}" fill="${c.bg}"/>`,
-      `<rect x="${pad}" y="${pad}" width="${W}" height="${H}" rx="10" fill="${c.ocean}"/>`,
-      `<g transform="translate(${pad} ${pad})">`,
-      `<clipPath id="clip"><rect width="${W}" height="${H}" rx="10"/></clipPath>`,
-      `<g clip-path="url(#clip)">`
-    );
-    for (const d of WORLD.decor) parts.push(`<path d="${d}" fill="${c.land}" opacity=".55"/>`);
-    for (const f of FEATURES) {
-      const fill = picked.has(f.c) ? c.on : c.land;
-      if (f.d) parts.push(`<path d="${f.d}" fill="${fill}" stroke="${c.ocean}" stroke-width=".5"/>`);
-      if (f.a < DOT_AREA) parts.push(`<circle cx="${f.x}" cy="${f.y}" r="2.6" fill="${fill}" stroke="${c.ocean}" stroke-width=".5"/>`);
-    }
-    parts.push(`</g></g>`);
-
-    const baseY = pad + H + 46;
-    parts.push(
-      `<text x="${pad}" y="${baseY}" font-size="30" font-weight="700" fill="${c.ink}">${esc(t('exportTitle'))}</text>`,
-      `<text x="${pad}" y="${baseY + 32}" font-size="17" fill="${c.dim}">${sov} / ${SOVEREIGN_TOTAL} ${esc(t('countries'))}` +
-        `${terr ? ` · ${terr} ${esc(t('territories'))}` : ''}</text>`,
-      `<text x="${width - pad}" y="${baseY + 6}" text-anchor="end" font-size="52" font-weight="800" fill="${c.accent}">${pct}%</text>`,
-      `<text x="${width - pad}" y="${baseY + 32}" text-anchor="end" font-size="14" fill="${c.dim}">EarthVisited</text>`,
-      `</svg>`
-    );
-    return parts.join('');
+    return { sov, terr, per, total: SOVEREIGN_TOTAL, pct: Math.round((sov / SOVEREIGN_TOTAL) * 100) };
   }
 
-  function downloadPNG() {
-    const btn = $('dlBtn');
-    btn.disabled = true;
-    const svg = buildExportSVG();
-    const url = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
-    const img = new Image();
-    img.onload = () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = img.width || 2120;
-      canvas.height = img.height || 1336;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      canvas.toBlob((blob) => {
-        const href = URL.createObjectURL(blob);
+  function shareUrl() {
+    return `${location.origin}${location.pathname}#v1=${encodeShare()}`;
+  }
+
+  function shareMessage() {
+    const s = stats();
+    return t('shareText').replace('{n}', s.sov).replace('{total}', s.total).replace('{pct}', s.pct);
+  }
+
+  function buildCardSVG(size) {
+    const s = stats();
+    const selected = FEATURES.filter((f) => picked.has(f.c) && f.s === 1)
+      .map(nameOf)
+      .sort((a, b) => a.localeCompare(b, lang));
+    return EarthCard.build({
+      size,
+      world: WORLD,
+      picked,
+      stats: s,
+      regions: REGIONS.map((r) => ({ label: REGION_NAMES[lang][r], have: s.per[r] || 0, total: REGION_TOTAL[r] })),
+      names: selected,
+      texts: {
+        title: t('cardTitle'),
+        countries: t('countries'),
+        territories: t('territories'),
+        pct: lang === 'tr' ? `%${s.pct}` : `${s.pct}%`,
+        more: t('cardMore'),
+        url: (location.host + location.pathname).replace(/\/(index\.html)?$/, ''),
+      },
+      colors: {
+        bg: cssVar('--bg-2'),
+        ocean: cssVar('--ocean'),
+        land: cssVar('--land'),
+        on: cssVar('--picked'),
+        ink: cssVar('--ink'),
+        accent: cssVar('--accent'),
+      },
+    });
+  }
+
+  function svgToPng(svg, scale = 2) {
+    return new Promise((resolve, reject) => {
+      const size = svg.match(/width="(\d+)" height="(\d+)"/);
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = (size ? +size[1] : img.width) * scale;
+        canvas.height = (size ? +size[2] : img.height) * scale;
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('toBlob failed'))), 'image/png');
+      };
+      img.onerror = () => reject(new Error('svg load failed'));
+      img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+    });
+  }
+
+  async function renderCard() {
+    const svg = buildCardSVG(cardSize);
+    $('cardImg').src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+    $('cardImg').alt = shareMessage();
+    cardBlob = null;
+    try {
+      cardBlob = await svgToPng(svg, cardSize === 'link' ? 2 : 1.5);
+    } catch {
+      cardBlob = null;
+    }
+    updateShareButtons();
+  }
+
+  function canSharePng() {
+    if (!navigator.canShare || !cardBlob) return false;
+    try {
+      return navigator.canShare({ files: [new File([cardBlob], 'earthvisited.png', { type: 'image/png' })] });
+    } catch {
+      return false;
+    }
+  }
+
+  function updateShareButtons() {
+    $('sysShare').hidden = !canSharePng();
+    $('saveImg').disabled = !cardBlob;
+    $('copyImg').disabled = !cardBlob || !window.ClipboardItem;
+  }
+
+  function renderSizes() {
+    $('sizes').replaceChildren(
+      ...CARD_SIZES.map(([key, label]) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'size';
+        b.classList.toggle('on', cardSize === key);
+        b.setAttribute('aria-pressed', String(cardSize === key));
+        b.textContent = t(label);
+        b.onclick = () => {
+          cardSize = key;
+          renderSizes();
+          renderCard();
+        };
+        return b;
+      })
+    );
+  }
+
+  const SOCIALS = [
+    { id: 'x', label: 'X', href: (u, txt) => `https://twitter.com/intent/tweet?text=${txt}&url=${u}` },
+    { id: 'whatsapp', label: 'WhatsApp', href: (u, txt) => `https://wa.me/?text=${txt}%20${u}` },
+    { id: 'telegram', label: 'Telegram', href: (u, txt) => `https://t.me/share/url?url=${u}&text=${txt}` },
+    { id: 'facebook', label: 'Facebook', href: (u) => `https://www.facebook.com/sharer/sharer.php?u=${u}` },
+    { id: 'linkedin', label: 'LinkedIn', href: (u) => `https://www.linkedin.com/sharing/share-offsite/?url=${u}` },
+    { id: 'reddit', label: 'Reddit', href: (u, txt) => `https://www.reddit.com/submit?url=${u}&title=${txt}` },
+    { id: 'mail', label: 'E-mail', href: (u, txt) => `mailto:?subject=EarthVisited&body=${txt}%20${u}` },
+  ];
+
+  function renderSocials() {
+    const u = encodeURIComponent(shareUrl());
+    const txt = encodeURIComponent(shareMessage());
+    $('socials').replaceChildren(
+      ...SOCIALS.map((s) => {
         const a = document.createElement('a');
-        a.href = href;
-        a.download = 'earthvisited.png';
-        a.click();
-        setTimeout(() => URL.revokeObjectURL(href), 5000);
-        btn.disabled = false;
-        toast(t('saved'));
-      }, 'image/png');
-    };
-    img.onerror = () => {
-      btn.disabled = false;
-    };
-    img.src = url;
+        a.className = `social ${s.id}`;
+        a.href = s.href(u, txt);
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        a.textContent = s.label;
+        return a;
+      })
+    );
+  }
+
+  function openShare() {
+    history.replaceState(null, '', shareUrl());
+    cardSize = cardSize || 'link';
+    renderSizes();
+    renderSocials();
+    renderCard();
+    const sheet = $('sheet');
+    if (typeof sheet.showModal === 'function') sheet.showModal();
+    else sheet.setAttribute('open', '');
+  }
+
+  function saveCard() {
+    if (!cardBlob) return;
+    const href = URL.createObjectURL(cardBlob);
+    const a = document.createElement('a');
+    a.href = href;
+    a.download = `earthvisited-${cardSize}.png`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(href), 5000);
+    toast(t('saved'));
+  }
+
+  async function copyCard() {
+    if (!cardBlob || !window.ClipboardItem) return toast(t('copyImageFail'));
+    try {
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': cardBlob })]);
+      toast(t('copiedImage'));
+    } catch {
+      toast(t('copyImageFail'));
+    }
+  }
+
+  async function systemShare() {
+    if (!cardBlob) return;
+    const file = new File([cardBlob], 'earthvisited.png', { type: 'image/png' });
+    try {
+      await navigator.share({ files: [file], text: shareMessage(), url: shareUrl() });
+    } catch (err) {
+      if (err && err.name === 'AbortError') return;
+      try {
+        await navigator.share({ text: shareMessage(), url: shareUrl() });
+      } catch { /* user dismissed */ }
+    }
   }
 
   /* ---------------- misc UI ---------------- */
@@ -634,7 +774,7 @@
   }
 
   async function share() {
-    const url = `${location.origin}${location.pathname}#v1=${encodeShare()}`;
+    const url = shareUrl();
     history.replaceState(null, '', url);
     try {
       await navigator.clipboard.writeText(url);
@@ -654,6 +794,11 @@
     $('langBtn').title = lang === 'en' ? 'Türkçe' : 'English';
     buildList();
     updateScore();
+    if ($('sheet').open) {
+      renderSizes();
+      renderSocials();
+      renderCard();
+    }
   }
 
   function applyTheme() {
@@ -688,8 +833,15 @@
       updateScore();
       save();
     };
-    $('shareBtn').onclick = share;
-    $('dlBtn').onclick = downloadPNG;
+    $('shareBtn').onclick = openShare;
+    $('sheetClose').onclick = () => $('sheet').close();
+    $('sheet').addEventListener('click', (e) => {
+      if (e.target === $('sheet')) $('sheet').close(); // click on the backdrop
+    });
+    $('copyLink').onclick = share;
+    $('saveImg').onclick = saveCard;
+    $('copyImg').onclick = copyCard;
+    $('sysShare').onclick = systemShare;
     $('langBtn').onclick = () => {
       lang = lang === 'en' ? 'tr' : 'en';
       savePrefs();

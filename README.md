@@ -19,9 +19,16 @@ Inspired by [turkeyvisited](https://ozanyerli.github.io/turkeyvisited/), but for
   chip or a second click on the active continent clears it. Search stacks on top of the filter.
 - **Progress by region** — Africa, Americas, Asia, Europe, Oceania.
 - **English / Turkish** UI and country names, light / dark theme, both remembered.
-- **Download PNG** — a shareable 2× image of the map with your score.
+- **Share sheet** — one *Share* button opens a card preview in three formats: **landscape** 1200×630 (link
+  previews, X, Facebook, LinkedIn), **square** 1080×1080 (Instagram/feed) and **story** 1080×1920, which
+  also lists the countries by name. The card carries the map, your count, the percentage and a per-continent
+  breakdown, in whatever theme and language the page is using.
+- **Direct sharing** — *Share image* uses the Web Share API, handing the PNG straight to the phone's share
+  sheet (WhatsApp, Instagram, X…) where the browser supports it; otherwise save or copy the card to the
+  clipboard. Buttons for X, WhatsApp, Telegram, Facebook, LinkedIn, Reddit and e-mail open each platform's
+  composer pre-filled with your score and link.
 - **Copy link** — your selection is encoded in the URL (`#v1=…`), so a link restores the exact map.
-  Selections also persist in `localStorage`.
+  Selections also persist in `localStorage`. A static `og.png` gives the link a proper preview card.
 
 ## Running it
 
@@ -47,7 +54,9 @@ For GitHub Pages: push the repo and set **Settings → Pages → Deploy from a b
 index.html          markup
 css/style.css       theme + layout
 js/data.js          GENERATED — projected map paths and country metadata
-js/app.js           map rendering, selection, zoom/pan, i18n, PNG export
+js/card.js          share-card renderer (SVG, one layout per format)
+js/app.js           map rendering, selection, zoom/pan, i18n, share sheet
+og.png              static link-preview image (regenerate with tools/gen-og.md steps)
 tools/gen.mjs       regenerates js/data.js
 ```
 
