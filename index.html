@@ -39,9 +39,13 @@
     <h1>Earth<span>Visited</span></h1>
   </div>
   <div class="topbar-actions">
-    <button id="langBtn" class="chip" type="button" title="Türkçe" aria-label="Türkçe">TR</button>
-    <button id="themeBtn" class="chip" type="button" data-i18n-title="theme" aria-label="Theme">
-      <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9Z" fill="currentColor"/></svg>
+    <button id="settingsBtn" class="chip wide" type="button" data-i18n-title="settings">
+      <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3.2"/>
+        <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 8.9 19.3a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.7 8.9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34H9.1A1.7 1.7 0 0 0 10.13 3V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.01a1.7 1.7 0 0 0 1.56 1.03H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.56 1.03Z"/>
+      </svg>
+      <span data-i18n="settings">Settings</span>
     </button>
   </div>
 </header>
@@ -65,7 +69,7 @@
     <div class="score">
       <div class="score-main">
         <span class="count" id="count">0</span>
-        <span class="of">/ 195</span>
+        <span class="of" id="total">/ 195</span>
         <span class="pct" id="pct">0%</span>
       </div>
       <div class="bar"><i id="barfill"></i></div>
@@ -94,6 +98,8 @@
         <div class="brush" id="brush" role="group"></div>
       </div>
 
+      <div class="divider"></div>
+
       <div class="block">
         <div class="caption" data-i18n="continents">Filter by continent</div>
         <div class="regions" id="regions"></div>
@@ -113,6 +119,29 @@
     </div>
   </aside>
 </main>
+
+<dialog id="settings" class="sheet" aria-labelledby="settingsTitle">
+  <div class="sheet-head">
+    <h2 id="settingsTitle" data-i18n="settings">Settings</h2>
+    <button id="settingsClose" class="chip" type="button" data-i18n-title="close">✕</button>
+  </div>
+
+  <div class="block">
+    <div class="caption" data-i18n="language">Language</div>
+    <div class="opts" id="langOpts" role="group"></div>
+  </div>
+
+  <div class="block">
+    <div class="caption" data-i18n="appearance">Appearance</div>
+    <div class="opts" id="themeOpts" role="group"></div>
+  </div>
+
+  <div class="block">
+    <div class="caption" data-i18n="colors">Marker colours</div>
+    <div class="colorlist" id="colorList"></div>
+    <button id="resetColors" class="btn subtle" type="button" data-i18n="resetColors">Reset to defaults</button>
+  </div>
+</dialog>
 
 <dialog id="sheet" class="sheet" aria-labelledby="sheetTitle">
   <div class="sheet-head">
@@ -136,6 +165,7 @@
 
 <div class="toast" id="toast" hidden></div>
 
+<script src="js/i18n.js"></script>
 <script src="js/data.js"></script>
 <script src="js/card.js"></script>
 <script src="js/app.js"></script>

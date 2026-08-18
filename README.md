@@ -11,8 +11,9 @@ Inspired by [turkeyvisited](https://ozanyerli.github.io/turkeyvisited/), but for
 - **Built for touch too** — every tap shows a strip with the flag, the country's name and whether it was added
   or removed, since phones have no hover; **press and hold** reads a country's name without selecting it; and
   micro-state markers are sized in screen pixels, so their tap targets stay finger-sized on a small screen.
-- **195 sovereign countries** counted (193 UN members + Vatican City and Palestine), with **42 dependent
-  territories** (Greenland, Puerto Rico, Hong Kong, Antarctica…) selectable and counted separately.
+- **196 countries** counted — the 195 UN members and observer states, plus the Turkish Republic of Northern
+  Cyprus, which this map counts as a country rather than a dependency — with **42 dependent territories**
+  (Greenland, Puerto Rico, Hong Kong, Antarctica…) selectable and counted separately.
 - **Micro-states are clickable** — Singapore, Malta, Monaco, Tuvalu and friends get a dot marker so they are
   reachable even at 1× zoom, plus a searchable list for anything easier to find by name.
 - **Four ways to mark a country** — *lived*, *visited*, *transit* and *want to go*. A brush selector in the
@@ -29,7 +30,12 @@ Inspired by [turkeyvisited](https://ozanyerli.github.io/turkeyvisited/), but for
   (8.22 bn) your selection covers. Visiting 48 countries can mean 25% of the countries but 47% of the land
   and 65% of humanity.
 - **Progress by region** — Africa, Americas, Asia, Europe, Oceania.
-- **English / Turkish** UI and country names, light / dark theme, both remembered.
+- **Eight languages** — English, Türkçe, Deutsch, Español, Français, Italiano, Português, Русский, for both
+  the interface and the country names; search matches any of them, so typing “Germany” finds it while the UI
+  is in Turkish.
+- **Settings** — one button in the header opens language, theme (dark / light / follow the system) and a
+  colour picker for each of the four mark types. Everything is remembered, and the share cards pick up your
+  colours.
 - **Share sheet** — one *Share* button opens a card preview in three formats: **landscape** 1200×630 (link
   previews, X, Facebook, LinkedIn), **square** 1080×1080 (Instagram/feed) and **story** 1080×1920, which
   also lists the countries by name. The card carries the map, your count, the percentage and a per-continent
@@ -56,8 +62,8 @@ For GitHub Pages: push the repo and set **Settings → Pages → Deploy from a b
 | URL | Effect |
 | --- | --- |
 | `#v1=<code>` | Loads a shared selection |
-| `?lang=tr` / `?lang=en` | Opens in that language |
-| `?theme=light` / `?theme=dark` | Opens in that theme |
+| `?lang=tr`, `?lang=de`, … | Opens in that language (en, tr, de, es, fr, it, pt, ru) |
+| `?theme=light` / `?theme=dark` / `?theme=auto` | Opens in that theme |
 
 ## Layout
 
@@ -68,6 +74,8 @@ js/data.js          GENERATED — projected map paths and country metadata
 assets/logo.svg     brand mark — globe with a check badge
 assets/fonts/       Twemoji Country Flags webfont (flag glyphs for Windows)
 assets/favicon.svg  simplified mark for tab-sized rendering
+assets/flags/       flags with no emoji, as SVG (Northern Cyprus)
+js/i18n.js          interface strings for the eight languages
 js/card.js          share-card renderer (SVG, one layout per format)
 js/app.js           map rendering, selection, zoom/pan, i18n, share sheet
 og.png              static link-preview image (regenerate with tools/gen-og.md steps)
@@ -98,8 +106,9 @@ outliers (Russia counts as Europe, Hawaii as Oceania) do not stretch a continent
 
 A few choices the generator makes:
 
-- Northern Cyprus and Somaliland are drawn as part of Cyprus and Somalia; Kosovo is a separate, selectable
-  entry that does not count toward the 195.
+- Somaliland is drawn as part of Somalia; Kosovo is a separate, selectable entry that does not count as a
+  country. Northern Cyprus is its own entry with its own flag (`assets/flags/xn.svg`), counted as a country
+  (`s: 3` in the generator) with its 3,355 km² taken off the Republic of Cyprus so the land total stays right.
 - Taiwan and other non-UN entities are selectable but counted as territories, not sovereign countries.
 - Tuvalu is absent from the 1:50m dataset, so it is added as a marker-only entry.
 - Shapes with no ISO code (Siachen Glacier, Indian Ocean territories) are drawn but not selectable.

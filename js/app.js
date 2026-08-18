@@ -18,130 +18,32 @@
   const H = WORLD.h;
   const FEATURES = WORLD.f;
   const byCode = new Map(FEATURES.map((f) => [f.c, f]));
-  const SOVEREIGN_TOTAL = FEATURES.filter((f) => f.s === 1).length;
+  // s: 1 UN member (or observer state), 3 counted as a country anyway, 2 territory
+  const isCountry = (f) => f.s === 1 || f.s === 3;
+  const SOVEREIGN_TOTAL = FEATURES.filter(isCountry).length;
   const WORLD_LAND = WORLD.totals.k; // km², every entity on the map
   const WORLD_POP = WORLD.totals.p;
-  const SHARE_ORDER = FEATURES.map((f) => f.c).sort(); // stable bit order for share links
+  // Bit order for share links. data.js pins it so that entities added later land at
+  // the end and older links keep decoding to the same countries.
+  const SHARE_ORDER = WORLD.order || FEATURES.map((f) => f.c).sort();
 
   const REGION_BOX = WORLD.regions;
   const REGIONS = ['Africa', 'Americas', 'Asia', 'Europe', 'Oceania'];
   const REGION_TOTAL = {};
-  for (const r of REGIONS) REGION_TOTAL[r] = FEATURES.filter((f) => f.s === 1 && f.r === r).length;
+  for (const r of REGIONS) REGION_TOTAL[r] = FEATURES.filter((f) => isCountry(f) && f.r === r).length;
 
   /* ---------------- i18n ---------------- */
-  const I18N = {
-    en: {
-      title: 'EarthVisited — mark the countries you have visited',
-      countries: 'countries visited',
-      territories: 'territories',
-      search: 'Search a country…',
-      reset: 'Reset',
-      share: 'Copy link',
-      download: 'Download PNG',
-      hint: 'Click a country · scroll to zoom · drag to pan',
-      hintTouch: 'Tap a country · hold to see its name · pinch to zoom',
-      added: 'added',
-      removed: 'removed',
-      theme: 'Switch theme',
-      territory: 'territory',
-      noResults: 'No match',
-      copied: 'Link copied to clipboard',
-      copyFail: 'Could not copy — link is in the address bar',
-      resetAsk: 'Tap again to clear',
-      saved: 'Image saved',
-      exportTitle: 'Countries I have visited',
-      allRegions: 'Whole world',
-      land: 'Land area',
-      people: 'Population',
-      markAs: 'Mark as',
-      continents: 'Filter by continent',
-      lived: 'Lived',
-      visited: 'Visited',
-      transit: 'Transit',
-      wish: 'Want to go',
-      cleared: 'cleared',
-      wishLine: 'on the wish list',
-      peopleUnit: 'people',
-      shareOpen: 'Share',
-      shareTitle: 'Share your map',
-      shareImage: 'Share image',
-      saveImage: 'Save image',
-      copyImage: 'Copy image',
-      copiedImage: 'Image copied to clipboard',
-      copyImageFail: 'Copying images is not supported here — save it instead',
-      shareNote: 'Share image opens your device\u2019s share menu — Instagram, WhatsApp, X and the rest live there. If your browser has no share menu, save or copy the card and attach it yourself.',
-      sizeLink: 'Landscape',
-      sizeSquare: 'Square',
-      sizeStory: 'Story',
-      cardTitle: 'Countries I have visited',
-      cardMore: '+{n} more',
-      shareText: "I've visited {n} of the world's {total} countries ({pct}%). How many have you seen?",
-      headSel: 'Selected',
-      headRest: 'All countries',
-      of: 'of',
-      other: 'Other',
-    },
-    tr: {
-      title: 'EarthVisited — gezdiğiniz ülkeleri işaretleyin',
-      countries: 'ülke gezildi',
-      territories: 'bağımlı bölge',
-      search: 'Ülke ara…',
-      reset: 'Sıfırla',
-      share: 'Bağlantıyı kopyala',
-      download: "PNG'yi indir",
-      hint: 'Ülkeye tıklayın · yakınlaştırmak için kaydırın · sürükleyin',
-      hintTouch: 'Ülkeye dokunun · ismi için basılı tutun · parmakla yakınlaştırın',
-      added: 'eklendi',
-      removed: 'çıkarıldı',
-      theme: 'Temayı değiştir',
-      territory: 'bölge',
-      noResults: 'Sonuç yok',
-      copied: 'Bağlantı kopyalandı',
-      copyFail: 'Kopyalanamadı — bağlantı adres çubuğunda',
-      resetAsk: 'Emin misin?',
-      saved: 'Görsel kaydedildi',
-      exportTitle: 'Gezdiğim ülkeler',
-      allRegions: 'Tüm dünya',
-      land: 'Kara alanı',
-      people: 'Nüfus',
-      markAs: 'İşaret türü',
-      continents: 'Kıta filtresi',
-      lived: 'Yaşadım',
-      visited: 'Gezdim',
-      transit: 'Transit',
-      wish: 'İstiyorum',
-      cleared: 'kaldırıldı',
-      wishLine: 'gitmek istiyor',
-      peopleUnit: 'kişi',
-      shareOpen: 'Paylaş',
-      shareTitle: 'Haritanı paylaş',
-      shareImage: 'Görseli paylaş',
-      saveImage: 'Görseli kaydet',
-      copyImage: 'Görseli kopyala',
-      copiedImage: 'Görsel panoya kopyalandı',
-      copyImageFail: 'Burada görsel kopyalanamıyor — kaydedip kullanabilirsin',
-      shareNote: 'Görseli paylaş, cihazının paylaşım menüsünü açar — Instagram, WhatsApp, X ve diğerleri orada. Tarayıcında paylaşım menüsü yoksa kartı kaydedip veya kopyalayıp kendin ekleyebilirsin.',
-      sizeLink: 'Yatay',
-      sizeSquare: 'Kare',
-      sizeStory: 'Hikâye',
-      cardTitle: 'Gezdiğim ülkeler',
-      cardMore: '+{n} ülke daha',
-      shareText: 'Dünyadaki {total} ülkenin {n} tanesini gezdim (%{pct}). Sen kaç ülke gezdin?',
-      headSel: 'Seçilenler',
-      headRest: 'Tüm ülkeler',
-      of: '/',
-      other: 'Diğer',
-    },
-  };
-  const REGION_NAMES = {
-    en: { Africa: 'Africa', Americas: 'Americas', Asia: 'Asia', Europe: 'Europe', Oceania: 'Oceania' },
-    tr: { Africa: 'Afrika', Americas: 'Amerika', Asia: 'Asya', Europe: 'Avrupa', Oceania: 'Okyanusya' },
-  };
+  const LANGS = I18N.list;
+  const STRINGS = I18N.s;
+  const REGION_NAMES = I18N.regions;
+  const DEFAULT_COLORS = {}; // filled from the stylesheet on first paint
 
   let lang = 'en';
-  let theme = 'dark';
-  const t = (k) => I18N[lang][k];
-  const nameOf = (f) => (lang === 'tr' ? f.t : f.n);
+  let theme = 'auto'; // 'dark' | 'light' | 'auto'
+  let colors = {}; // level id -> custom hex, empty means the stylesheet default
+  const t = (k) => STRINGS[lang][k] ?? STRINGS.en[k] ?? k;
+  const nameOf = (f) => (f.L && f.L[lang]) || f.n;
+  const localeOf = () => (LANGS.find((l) => l.code === lang) || LANGS[0]).locale;
 
   /* ---------------- state ---------------- */
   // 0 = unmarked. 1..3 all mean "I have been there" and feed the score; 4 is a wish.
@@ -166,6 +68,21 @@
   let cardBlob = null; // PNG for the size currently previewed
 
   const $ = (id) => document.getElementById(id);
+
+  // Most flags are emoji; entities without one (Northern Cyprus) ship an SVG.
+  function flagNode(f, cls = 'flag') {
+    if (f.fi) {
+      const img = document.createElement('img');
+      img.className = cls;
+      img.src = f.fi;
+      img.alt = '';
+      return img;
+    }
+    const span = document.createElement('span');
+    span.className = cls;
+    span.textContent = f.g || '🏳';
+    return span;
+  }
   const map = $('map');
   const mapwrap = $('mapwrap');
   const tip = $('tip');
@@ -234,7 +151,7 @@
 
   function savePrefs() {
     try {
-      localStorage.setItem(PREF_KEY, JSON.stringify({ lang, theme }));
+      localStorage.setItem(PREF_KEY, JSON.stringify({ lang, theme, colors }));
     } catch { /* private mode */ }
   }
 
@@ -268,13 +185,15 @@
     try {
       saved = JSON.parse(localStorage.getItem(PREF_KEY) || 'null');
     } catch { /* ignore */ }
-    const guess = (navigator.language || '').toLowerCase().startsWith('tr') ? 'tr' : 'en';
-    lang = saved?.lang === 'tr' || saved?.lang === 'en' ? saved.lang : guess;
-    theme = saved?.theme || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
-    // ?lang=tr / ?theme=light let a shared link pick how it opens
+    const known = (c) => LANGS.some((l) => l.code === c);
+    const guess = (navigator.language || '').slice(0, 2).toLowerCase();
+    lang = known(saved?.lang) ? saved.lang : known(guess) ? guess : 'en';
+    theme = ['dark', 'light', 'auto'].includes(saved?.theme) ? saved.theme : 'auto';
+    colors = saved && typeof saved.colors === 'object' && saved.colors ? { ...saved.colors } : {};
+    // ?lang=de / ?theme=light let a shared link pick how it opens
     const q = new URLSearchParams(location.search);
-    if (q.get('lang') === 'tr' || q.get('lang') === 'en') lang = q.get('lang');
-    if (q.get('theme') === 'light' || q.get('theme') === 'dark') theme = q.get('theme');
+    if (known(q.get('lang'))) lang = q.get('lang');
+    if (['dark', 'light', 'auto'].includes(q.get('theme'))) theme = q.get('theme');
   }
 
   /* ---------------- map ---------------- */
@@ -481,9 +400,8 @@
     if (!code) return hideTip();
     const f = byCode.get(code);
     const rect = mapwrap.getBoundingClientRect();
-    tip.innerHTML = '';
-    tip.append(`${f.g ? f.g + ' ' : ''}${nameOf(f)}`);
-    if (f.s !== 1) {
+    tip.replaceChildren(flagNode(f, 'flag tipflag'), nameOf(f));
+    if (f.s === 2) {
       const s = document.createElement('small');
       s.textContent = t('territory');
       tip.appendChild(s);
@@ -505,8 +423,8 @@
     const el = $('flash');
     el.replaceChildren();
     const name = document.createElement('b');
-    name.textContent = `${f.g ? f.g + ' ' : ''}${nameOf(f)}`;
-    el.appendChild(name);
+    name.textContent = nameOf(f);
+    el.append(flagNode(f, 'flag tipflag'), name);
     if (state !== undefined) {
       const tag = document.createElement('span');
       tag.className = state ? `on lv${state}` : 'off';
@@ -553,10 +471,11 @@
       row.className = 'row';
       row.dataset.code = f.c;
       row.innerHTML =
-        `<span class="box"></span><span class="flag">${f.g || '🏳'}</span>` +
-        `<span class="nm"></span>${f.s !== 1 ? `<span class="tag"></span>` : ''}`;
+        `<span class="box"></span><span class="flag"></span>` +
+        `<span class="nm"></span>${f.s === 2 ? `<span class="tag"></span>` : ''}`;
+      row.querySelector('.flag').replaceWith(flagNode(f));
       row.querySelector('.nm').textContent = nameOf(f);
-      if (f.s !== 1) row.querySelector('.tag').textContent = t('territory');
+      if (f.s === 2) row.querySelector('.tag').textContent = t('territory');
       row.onclick = () => toggle(f.c);
       row.onmouseenter = () => shapesOf(f.c).forEach((s) => s.classList.add('hl'));
       row.onmouseleave = () => shapesOf(f.c).forEach((s) => s.classList.remove('hl'));
@@ -574,6 +493,16 @@
     filterList($('search').value);
   }
 
+  const indexCache = new Map();
+  const searchIndex = (f) => {
+    let v = indexCache.get(f.c);
+    if (v === undefined) {
+      v = fold([f.n, ...Object.values(f.L || {})].join('\u0000'));
+      indexCache.set(f.c, v);
+    }
+    return v;
+  };
+
   const fold = (s) =>
     s
       .toLocaleLowerCase('tr')
@@ -588,8 +517,8 @@
     for (const f of FEATURES) {
       const row = els[f.c]?.row;
       if (!row) continue;
-      const matchesText =
-        !needle || fold(f.n).includes(needle) || fold(f.t).includes(needle) || f.c.toLowerCase() === needle;
+      // search every language we carry, so "Germany" finds it while the UI is Turkish
+      const matchesText = !needle || f.c.toLowerCase() === needle || searchIndex(f).includes(needle);
       const hit = matchesText && (!activeRegion || f.r === activeRegion);
       row.hidden = !hit;
       if (hit) (marks.has(f.c) ? onShown++ : offShown++);
@@ -662,6 +591,7 @@
   function updateScore() {
     const s = stats();
     $('count').textContent = s.sov;
+    $('total').textContent = `/ ${SOVEREIGN_TOTAL}`;
     $('terr').textContent = s.terr;
     $('pct').textContent = withPct(s.pct);
     $('barfill').style.width = `${(s.sov / SOVEREIGN_TOTAL) * 100}%`;
@@ -759,7 +689,7 @@
       if (!BEEN.has(lv)) continue; // a wish is not a visit
       land += f.k || 0;
       people += f.p || 0;
-      if (f.s === 1) {
+      if (isCountry(f)) {
         sov++;
         per[f.r] = (per[f.r] || 0) + 1;
       } else terr++;
@@ -780,12 +710,11 @@
   }
 
   /* ---------------- number formatting ---------------- */
-  const locale = () => (lang === 'tr' ? 'tr-TR' : 'en-US');
-  // one decimal below 10% so a single country still registers
-  const pctText = (v) => new Intl.NumberFormat(locale(), { maximumFractionDigits: v < 10 ? 1 : 0 }).format(v);
   const compact = (v) =>
-    new Intl.NumberFormat(locale(), { notation: 'compact', maximumFractionDigits: 1 }).format(v);
-  const withPct = (v) => (lang === 'tr' ? `%${pctText(v)}` : `${pctText(v)}%`);
+    new Intl.NumberFormat(localeOf(), { notation: 'compact', maximumFractionDigits: 1 }).format(v);
+  // one decimal below 10% so a single country still registers
+  const withPct = (v) =>
+    new Intl.NumberFormat(localeOf(), { style: 'percent', maximumFractionDigits: v < 10 ? 1 : 0 }).format(v / 100);
 
   function shareUrl() {
     return `${location.origin}${location.pathname}#v2=${encodeShare()}`;
@@ -793,12 +722,12 @@
 
   function shareMessage() {
     const s = stats();
-    return t('shareText').replace('{n}', s.sov).replace('{total}', s.total).replace('{pct}', s.pct);
+    return t('shareText').replace('{n}', s.sov).replace('{total}', s.total).replace('{pct}', withPct(s.pct));
   }
 
   function buildCardSVG(size) {
     const s = stats();
-    const selected = FEATURES.filter((f) => been(f.c) && f.s === 1)
+    const selected = FEATURES.filter((f) => been(f.c) && isCountry(f))
       .map(nameOf)
       .sort((a, b) => a.localeCompare(b, lang));
     return EarthCard.build({
@@ -968,10 +897,9 @@
     for (const el of document.querySelectorAll('[data-i18n-title]')) el.title = t(el.dataset.i18nTitle);
     if (resetArmed) disarmReset();
     if (matchMedia('(hover: none)').matches) $('hint').textContent = t('hintTouch');
-    $('langBtn').textContent = lang === 'en' ? 'TR' : 'EN';
-    $('langBtn').title = lang === 'en' ? 'Türkçe' : 'English';
     buildList();
     updateScore();
+    if ($('settings').open) renderSettings();
     if ($('sheet').open) {
       renderSizes();
       renderCard();
@@ -986,7 +914,88 @@
   }
 
   function applyTheme() {
-    document.documentElement.dataset.theme = theme;
+    const resolved = theme === 'auto' ? (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark') : theme;
+    document.documentElement.dataset.theme = resolved;
+    applyColors();
+  }
+
+  // Remember what the stylesheet says before any override, so "reset" can restore it.
+  function readDefaultColors() {
+    for (const l of LEVELS) {
+      document.documentElement.style.removeProperty(`--lv${l.id}`);
+      DEFAULT_COLORS[l.id] = cssVar(`--lv${l.id}`);
+    }
+  }
+
+  function applyColors() {
+    readDefaultColors();
+    for (const l of LEVELS) {
+      if (colors[l.id]) document.documentElement.style.setProperty(`--lv${l.id}`, colors[l.id]);
+    }
+  }
+
+  /* ---------------- settings ---------------- */
+  function optionButton(label, active, onPick) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'opt';
+    b.classList.toggle('on', active);
+    b.setAttribute('aria-pressed', String(active));
+    b.textContent = label;
+    b.onclick = onPick;
+    return b;
+  }
+
+  function renderSettings() {
+    $('langOpts').replaceChildren(
+      ...LANGS.map((l) =>
+        optionButton(l.label, lang === l.code, () => {
+          lang = l.code;
+          savePrefs();
+          applyLang();
+          renderSettings();
+        })
+      )
+    );
+
+    $('themeOpts').replaceChildren(
+      ...['dark', 'light', 'auto'].map((mode) =>
+        optionButton(t(mode), theme === mode, () => {
+          theme = mode;
+          savePrefs();
+          applyTheme();
+          renderSettings();
+        })
+      )
+    );
+
+    $('colorList').replaceChildren(
+      ...LEVELS.map((l) => {
+        const row = document.createElement('label');
+        row.className = 'colorrow';
+        const swatch = document.createElement('input');
+        swatch.type = 'color';
+        swatch.value = colors[l.id] || DEFAULT_COLORS[l.id] || '#34d399';
+        swatch.oninput = () => {
+          colors[l.id] = swatch.value;
+          applyColors();
+          savePrefs();
+          repaintLevelColors();
+        };
+        const name = document.createElement('b');
+        name.textContent = t(l.key);
+        const count = document.createElement('span');
+        count.textContent = lastCounts ? lastCounts[l.id] || 0 : 0;
+        row.append(swatch, name, count);
+        return row;
+      })
+    );
+  }
+
+  // colours live in CSS variables, so only the pieces drawn from JS need a nudge
+  function repaintLevelColors() {
+    renderBrush(lastCounts);
+    if ($('sheet').open) renderCard();
   }
 
   function init() {
@@ -1027,6 +1036,27 @@
       updateScore();
       save();
     };
+    $('settingsBtn').onclick = () => {
+      renderSettings();
+      const dlg = $('settings');
+      if (typeof dlg.showModal === 'function') dlg.showModal();
+      else dlg.setAttribute('open', '');
+    };
+    $('settingsClose').onclick = () => $('settings').close();
+    $('settings').addEventListener('click', (e) => {
+      if (e.target === $('settings')) $('settings').close();
+    });
+    $('resetColors').onclick = () => {
+      colors = {};
+      applyColors();
+      savePrefs();
+      renderSettings();
+      repaintLevelColors();
+    };
+    matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => {
+      if (theme === 'auto') applyTheme();
+    });
+
     $('shareBtn').onclick = openShare;
     $('sheetClose').onclick = () => $('sheet').close();
     $('sheet').addEventListener('click', (e) => {
@@ -1036,16 +1066,6 @@
     $('saveImg').onclick = saveCard;
     $('copyImg').onclick = copyCard;
     $('sysShare').onclick = systemShare;
-    $('langBtn').onclick = () => {
-      lang = lang === 'en' ? 'tr' : 'en';
-      savePrefs();
-      applyLang();
-    };
-    $('themeBtn').onclick = () => {
-      theme = theme === 'dark' ? 'light' : 'dark';
-      savePrefs();
-      applyTheme();
-    };
     addEventListener('resize', sizeMarkers);
     addEventListener('hashchange', () => {
       const codes = fromHash();

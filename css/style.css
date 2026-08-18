@@ -20,10 +20,10 @@
   --ocean: #0d1626;
   --land: #22314d;
   --land-hover: #33456a;
-  --lv1: #6ee7b7;
+  --lv1: #4d94ff;
   --lv2: #34d399;
-  --lv3: #15806a;
-  --lv4: #f0a92e;
+  --lv3: #f0a92e;
+  --lv4: #f4506b;
   --border: rgba(206, 221, 247, .3);
   --border-on: rgba(6, 35, 26, .38);
   --picked: #34d399;
@@ -44,10 +44,10 @@ html[data-theme="light"] {
   --ocean: #dfe8f5;
   --land: #b9c5d8;
   --land-hover: #9fb0ca;
-  --lv1: #05654a;
+  --lv1: #2563eb;
   --lv2: #10b981;
-  --lv3: #7fd8bb;
-  --lv4: #e08c09;
+  --lv3: #d97f0b;
+  --lv4: #e11d48;
   --border: rgba(26, 41, 70, .34);
   --border-on: rgba(255, 255, 255, .5);
   --picked: #0ea472;
@@ -114,6 +114,55 @@ button, input { font: inherit; color: inherit; }
   transition: color .15s, border-color .15s, background .15s;
 }
 .chip:hover { color: var(--ink); border-color: var(--ink-dim); }
+.chip.wide { gap: 7px; padding: 0 12px; }
+@media (max-width: 480px) { .chip.wide span { display: none; } }
+
+/* settings dialog */
+.opts { display: flex; flex-wrap: wrap; gap: 6px; }
+.opt {
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--ink-dim);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color .15s, background .15s, color .15s;
+}
+.opt:hover { color: var(--ink); border-color: var(--ink-dim); }
+.opt.on {
+  color: var(--ink);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.colorlist { display: flex; flex-direction: column; gap: 6px; }
+.colorrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  font-size: 13px;
+}
+.colorrow b { flex: 1; font-weight: 600; }
+.colorrow span { color: var(--ink-dim); font-weight: 700; font-variant-numeric: tabular-nums; }
+.colorrow input[type="color"] {
+  width: 34px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: transparent;
+  cursor: pointer;
+}
+.colorrow input[type="color"]::-webkit-color-swatch-wrapper { padding: 2px; }
+.colorrow input[type="color"]::-webkit-color-swatch { border: 0; border-radius: 5px; }
+
+.btn.subtle { border-style: dashed; color: var(--ink-dim); font-weight: 600; }
+#settings .block + .block { margin-top: 16px; }
 
 /* ---------- layout ---------- */
 main {
@@ -155,10 +204,13 @@ main {
 .land.pickable { cursor: pointer; }
 .land.pickable:hover { fill: var(--land-hover); }
 .land.on { stroke: var(--border-on); }
-.land.lv1 { fill: var(--lv1); }
-.land.lv2 { fill: var(--lv2); }
-.land.lv3 { fill: var(--lv3); }
-.land.lv4 { fill: var(--lv4); }
+/* the :hover rule above is one class more specific than a bare .land.lvN, so a
+   country kept its hover colour until the cursor left it — hence the level
+   selectors repeat with .pickable to win in both states */
+.land.lv1, .land.pickable.lv1:hover { fill: var(--lv1); }
+.land.lv2, .land.pickable.lv2:hover { fill: var(--lv2); }
+.land.lv3, .land.pickable.lv3:hover { fill: var(--lv3); }
+.land.lv4, .land.pickable.lv4:hover { fill: var(--lv4); }
 .land.on:hover { filter: brightness(1.12); }
 .land.hl, .dot.hl { stroke: var(--accent); stroke-width: 2; }
 .land.dim, .dot.dim { opacity: .18; pointer-events: none; }
@@ -176,10 +228,10 @@ main {
 }
 .dot:hover { fill: var(--land-hover); opacity: 1; }
 .dot.on { stroke: var(--border-on); opacity: 1; }
-.dot.lv1 { fill: var(--lv1); }
-.dot.lv2 { fill: var(--lv2); }
-.dot.lv3 { fill: var(--lv3); }
-.dot.lv4 { fill: var(--lv4); }
+.dot.lv1, .dot.lv1:hover { fill: var(--lv1); }
+.dot.lv2, .dot.lv2:hover { fill: var(--lv2); }
+.dot.lv3, .dot.lv3:hover { fill: var(--lv3); }
+.dot.lv4, .dot.lv4:hover { fill: var(--lv4); }
 /* invisible, finger-sized target over each micro-state */
 .hit { fill: transparent; pointer-events: all; cursor: pointer; }
 
@@ -252,9 +304,9 @@ main {
   border-radius: 6px;
 }
 .flash span.on { background: var(--lv2); color: #06231a; }
-.flash span.on.lv1 { background: var(--lv1); }
-.flash span.on.lv3 { background: var(--lv3); color: #eafff7; }
-.flash span.on.lv4 { background: var(--lv4); color: #2a1a02; }
+.flash span.on.lv1 { background: var(--lv1); color: #f2f7ff; }
+.flash span.on.lv3 { background: var(--lv3); color: #2a1a02; }
+.flash span.on.lv4 { background: var(--lv4); color: #2d0710; }
 .flash span.off { background: color-mix(in srgb, var(--ink) 12%, transparent); color: var(--ink-dim); }
 @keyframes flashIn { from { opacity: 0; transform: translate(-50%, 6px); } }
 
@@ -293,7 +345,9 @@ main {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
+  /* only scrolls when the window is too short for the controls; the country list
+     below carries its own scrollbar so the menus above never scroll away */
   overflow-y: auto;
   overscroll-behavior: contain;
   /* room for the scrollbar so it never sits on the content */
@@ -304,17 +358,17 @@ main {
 .panel-body::-webkit-scrollbar-thumb { background: var(--line); border-radius: 99px; }
 
 .block { display: flex; flex-direction: column; gap: 6px; }
-.section-line { height: 1px; background: var(--line); }
+.divider { height: 1px; background: var(--line); margin: 4px 0 2px; }
 
 .score { flex: none; }
 .score-main { display: flex; align-items: baseline; gap: 6px; }
-.count { font-size: 40px; font-weight: 750; letter-spacing: -.03em; line-height: 1; }
+.count { font-size: 34px; font-weight: 750; letter-spacing: -.03em; line-height: 1; }
 .of { font-size: 16px; color: var(--ink-dim); font-weight: 600; }
 .pct { margin-left: auto; font-size: 15px; font-weight: 700; color: var(--accent); }
 
 .bar {
-  height: 7px;
-  margin: 10px 0 8px;
+  height: 6px;
+  margin: 8px 0 6px;
   border-radius: 99px;
   background: color-mix(in srgb, var(--ink) 10%, transparent);
   overflow: hidden;
@@ -332,6 +386,7 @@ main {
 
 .caption {
   font-size: 10px;
+  line-height: 1.2;
   font-weight: 700;
   letter-spacing: .06em;
   text-transform: uppercase;
@@ -344,7 +399,7 @@ main {
   align-items: center;
   gap: 7px;
   min-width: 0;
-  padding: 7px 9px;
+  padding: 6px 9px;
   border: 1px solid var(--line);
   border-radius: 9px;
   background: transparent;
@@ -366,19 +421,19 @@ main {
 .lvchip.lv3.on { border-color: var(--lv3); background: color-mix(in srgb, var(--lv3) 22%, transparent); }
 .lvchip.lv4.on { border-color: var(--lv4); background: color-mix(in srgb, var(--lv4) 15%, transparent); }
 
-.tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+.tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .tile {
   min-width: 0;
-  padding: 8px 10px 9px;
+  padding: 6px 9px 7px;
   border: 1px solid var(--line);
   border-radius: 10px;
 }
 .tile b { display: block; font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-dim); }
-.tile strong { display: block; margin-top: 2px; font-size: 19px; font-weight: 750; letter-spacing: -.02em; }
+.tile strong { display: block; margin-top: 1px; font-size: 17px; font-weight: 750; letter-spacing: -.02em; }
 .tile .tilebar {
   display: block;
   height: 4px;
-  margin: 7px 0 5px;
+  margin: 5px 0 4px;
   border-radius: 99px;
   background: color-mix(in srgb, var(--ink) 10%, transparent);
   overflow: hidden;
@@ -400,10 +455,10 @@ main {
   justify-content: space-between;
   gap: 8px;
   min-width: 0;
-  padding: 7px 9px;
+  padding: 6px 12px;
   border: 1px solid var(--line);
-  border-radius: 9px;
-  background: transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ink) 4%, transparent);
   font-size: 12.5px;
   text-align: left;
   cursor: pointer;
@@ -434,7 +489,7 @@ main {
 }
 .search input {
   width: 100%;
-  padding: 9px 10px 9px 32px;
+  padding: 8px 10px 8px 32px;
   border-radius: 9px;
   border: 1px solid var(--line);
   background: transparent;
@@ -445,7 +500,10 @@ main {
 .list {
   display: flex;
   flex-direction: column;
-  flex: none;
+  flex: 1 1 0;
+  min-height: 96px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   border: 1px solid var(--line);
   border-radius: 9px;
   padding: 4px;
@@ -485,12 +543,22 @@ main {
 }
 .row[hidden] { display: none; }
 .row:hover { background: color-mix(in srgb, var(--ink) 7%, transparent); }
-.row .flag {
+/* the flag webfont has to reach every flag, not just the ones in the list —
+   the tooltip and the tap strip render the same glyphs */
+.flag {
   font-family: "Twemoji Country Flags", system-ui, sans-serif;
-  font-size: 15px;
   line-height: 1;
-  width: 22px;
 }
+.row .flag {
+  font-size: 15px;
+  width: 22px;
+  flex: none;
+}
+.tip .flag, .flash .flag { font-size: 15px; margin-right: 2px; }
+/* flags without an emoji ship as an image; match the emoji's optical size */
+img.flag { width: 20px; height: 14px; object-fit: cover; border-radius: 2px; }
+.tip img.flag, .flash img.flag { vertical-align: -2px; margin-right: 6px; }
+.flash img.flag { margin-right: 0; }
 .row .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row .tag { font-size: 10px; color: var(--ink-dim); border: 1px solid var(--line); border-radius: 5px; padding: 1px 4px; }
 .row .box {
