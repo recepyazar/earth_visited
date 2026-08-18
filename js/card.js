@@ -2,7 +2,7 @@
    Pure presentation: app.js hands over already-computed numbers, strings and
    colours, this returns an SVG string sized for a social platform.
 
-   EarthCard.build({ size, world, picked, stats, regions, names, texts, colors })
+   EarthCard.build({ size, world, marks, levels, stats, regions, names, texts, colors })
 */
 window.EarthCard = (() => {
   'use strict';
@@ -57,8 +57,9 @@ window.EarthCard = (() => {
     ];
     for (const d of o.world.decor) out.push(`<path d="${d}" fill="${c.land}" opacity=".5"/>`);
     const stroke = ` stroke="${c.ocean}" stroke-width="${r(0.5 / k)}"`;
+    const levelColor = new Map(o.levels.map((l) => [l.id, l.color]));
     for (const f of o.world.f) {
-      const fill = o.picked.has(f.c) ? c.on : c.land;
+      const fill = levelColor.get(o.marks.get(f.c)) || c.land;
       if (f.d) out.push(`<path d="${f.d}" fill="${fill}"${stroke}/>`);
       if (f.a < 6) out.push(`<circle cx="${f.x}" cy="${f.y}" r="${r(Math.max(2.6, 3.6 / k))}" fill="${fill}"${stroke}/>`);
     }
@@ -78,7 +79,8 @@ window.EarthCard = (() => {
     const numY = titleY + cfg.num * 0.95;
     out.push(text(x, numY, String(s.sov), { size: cfg.num, weight: 800, fill: c.ink }));
     out.push(
-      text(x + String(s.sov).length * cfg.num * 0.58, numY, `/ ${s.total}`, {
+      // digit advance is ~0.6em in the bold system face; add a little breathing room
+      text(x + String(s.sov).length * cfg.num * 0.62 + cfg.num * 0.08, numY, `/ ${s.total}`, {
         size: cfg.of,
         weight: 600,
         fill: c.ink,
@@ -168,6 +170,25 @@ window.EarthCard = (() => {
     return { svg: out.join(''), h: rows * gapY };
   }
 
+  // Only worth drawing when more than one level is in play.
+  function legendRow(o, cfg, x, top, width) {
+    const used = o.levels.filter((l) => l.count > 0);
+    if (used.length < 2) return { svg: '', h: 0 };
+    const size = cfg.reg * 0.92;
+    const gap = width / used.length;
+    const svg = used
+      .map((l, i) => {
+        const lx = x + i * gap;
+        const box = size * 0.82;
+        return (
+          `<rect x="${r(lx)}" y="${r(top - box * 0.85)}" width="${r(box)}" height="${r(box)}" rx="${r(box * 0.28)}" fill="${l.color}"/>` +
+          text(lx + box * 1.5, top, `${l.label} ${l.count}`, { size, weight: 600, fill: o.colors.ink, op: 0.78 })
+        );
+      })
+      .join('');
+    return { svg, h: size * 2.1 };
+  }
+
   function build(o) {
     const cfg = SIZES[o.size] || SIZES.link;
     const c = o.colors;
@@ -181,13 +202,21 @@ window.EarthCard = (() => {
 
     if (cfg.mode === 'side') {
       const colW = W * 0.3;
+      const mapX = pad * 2 + colW;
       const mapW = W - pad * 3 - colW;
       const mapH = mapW * CROP_RATIO;
-      parts.push(mapBlock(o, pad * 2 + colW, (H - mapH) / 2, mapW).svg);
-      parts.push(scoreBlock(o, cfg, pad, pad, colW, false).svg);
+      const legend = legendRow(o, cfg, mapX, 0, mapW);
+      // the legend rides under the map, where the side layout has room to spare
+      const mapY = (H - mapH - legend.h) / 2;
+      parts.push(mapBlock(o, mapX, mapY, mapW).svg);
+      if (legend.h) parts.push(legendRow(o, cfg, mapX, mapY + mapH + cfg.reg * 1.5, mapW).svg);
+
+      const score = scoreBlock(o, cfg, pad, pad, colW, false);
+      parts.push(score.svg);
 
       const rowsH = o.regions.length * cfg.reg * 1.95;
-      parts.push(regionRows(o, cfg, pad, footY - cfg.foot * 2 - rowsH, colW, 0).svg);
+      const regionsTop = Math.max(score.bottom + cfg.title * 1.4, footY - cfg.foot * 2 - rowsH);
+      parts.push(regionRows(o, cfg, pad, regionsTop, colW, 0).svg);
     } else {
       const inner = W - pad * 2;
       const isStory = o.size === 'story' && o.names.length > 0;
@@ -202,7 +231,8 @@ window.EarthCard = (() => {
       // the map takes whatever height is left, so adding a stat block can never
       // push the continent rows onto the footer
       const base = { g1: cfg.title * 1.4, g2: cfg.reg * 1.6, g3: cfg.reg * 1.9 };
-      const roomForMap = contentBottom - (score.bottom + base.g1 + base.g2 + rowsH);
+      const legend = legendRow(o, cfg, pad, 0, inner);
+      const roomForMap = contentBottom - (score.bottom + base.g1 + base.g2 + rowsH + legend.h);
       const mapW = Math.min(inner, Math.max(inner * 0.5, roomForMap / CROP_RATIO));
       const mapH = mapW * CROP_RATIO;
       const mapX = pad + (inner - mapW) / 2;
@@ -211,7 +241,7 @@ window.EarthCard = (() => {
       // instead of stacking everything against the top edge
       let namesLines = 0;
       if (isStory) {
-        const room = contentBottom - (score.bottom + base.g1 + mapH + base.g2 + rowsH + base.g3);
+        const room = contentBottom - (score.bottom + base.g1 + mapH + base.g2 + rowsH + legend.h + base.g3);
         namesLines = Math.max(0, Math.min(Math.ceil(o.names.length / perLine), Math.floor(room / lineH) - 1));
       }
       const shown = isStory ? o.names.slice(0, namesLines * perLine) : [];
@@ -220,7 +250,7 @@ window.EarthCard = (() => {
 
       // slack goes to the two gaps above the continent rows only — the names block
       // was already measured against the base gap below them
-      const used = score.bottom + base.g1 + mapH + base.g2 + rowsH + (isStory ? base.g3 + namesH : 0);
+      const used = score.bottom + base.g1 + mapH + base.g2 + rowsH + legend.h + (isStory ? base.g3 + namesH : 0);
       const extra = Math.max(0, (contentBottom - used) / 2);
       const g1 = base.g1 + extra;
       const g2 = base.g2 + extra;
@@ -235,9 +265,10 @@ window.EarthCard = (() => {
       const colW = (inner - gapX * (cfg.cols - 1)) / cfg.cols;
       const regionsTop = mapY + mapH + g2;
       parts.push(regionRows(o, cfg, pad, regionsTop, colW, gapX).svg);
+      if (legend.h) parts.push(legendRow(o, cfg, pad, regionsTop + rowsH + cfg.reg * 0.8, inner).svg);
 
       if (shown.length) {
-        let y = regionsTop + rowsH + g3;
+        let y = regionsTop + rowsH + legend.h + g3;
         parts.push(`<line x1="${pad}" y1="${r(y)}" x2="${W - pad}" y2="${r(y)}" stroke="${c.ink}" stroke-opacity=".12"/>`);
         y += cfg.reg * 1.9;
         for (let i = 0; i < shown.length; i += perLine) {

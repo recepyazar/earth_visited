@@ -47,12 +47,19 @@
       noResults: 'No match',
       copied: 'Link copied to clipboard',
       copyFail: 'Could not copy — link is in the address bar',
-      resetAsk: 'Clear all selected countries?',
+      resetAsk: 'Tap again to clear',
       saved: 'Image saved',
       exportTitle: 'Countries I have visited',
       allRegions: 'Whole world',
       land: 'Land area',
       people: 'Population',
+      markAs: 'Mark as',
+      lived: 'Lived',
+      visited: 'Visited',
+      transit: 'Transit',
+      wish: 'Want to go',
+      cleared: 'cleared',
+      wishLine: 'on the wish list',
       peopleUnit: 'people',
       shareOpen: 'Share',
       shareTitle: 'Share your map',
@@ -90,12 +97,19 @@
       noResults: 'Sonuç yok',
       copied: 'Bağlantı kopyalandı',
       copyFail: 'Kopyalanamadı — bağlantı adres çubuğunda',
-      resetAsk: 'Seçili tüm ülkeler silinsin mi?',
+      resetAsk: 'Emin misin?',
       saved: 'Görsel kaydedildi',
       exportTitle: 'Gezdiğim ülkeler',
       allRegions: 'Tüm dünya',
       land: 'Kara alanı',
       people: 'Nüfus',
+      markAs: 'İşaret türü',
+      lived: 'Yaşadım',
+      visited: 'Gezdim',
+      transit: 'Transit',
+      wish: 'İstiyorum',
+      cleared: 'kaldırıldı',
+      wishLine: 'gitmek istiyor',
       peopleUnit: 'kişi',
       shareOpen: 'Paylaş',
       shareTitle: 'Haritanı paylaş',
@@ -128,10 +142,23 @@
   const nameOf = (f) => (lang === 'tr' ? f.t : f.n);
 
   /* ---------------- state ---------------- */
-  const picked = new Set();
+  // 0 = unmarked. 1..3 all mean "I have been there" and feed the score; 4 is a wish.
+  const LEVELS = [
+    { id: 1, key: 'lived' },
+    { id: 2, key: 'visited' },
+    { id: 3, key: 'transit' },
+    { id: 4, key: 'wish' },
+  ];
+  const BEEN = new Set([1, 2, 3]);
+  const marks = new Map(); // code -> level
+  let brush = 2; // the level a click paints with
+  const been = (code) => BEEN.has(marks.get(code));
   const els = {}; // code -> { shape, row }
   let activeRegion = null; // continent filter, or null for the whole world
   let regionCounts = {};
+  let lastCounts = null;
+  let resetArmed = false;
+  let resetTimer;
   let animTimer;
   let cardSize = 'link';
   let cardBlob = null; // PNG for the size currently previewed
@@ -143,23 +170,53 @@
   const list = $('list');
 
   /* ---------------- persistence ---------------- */
-  function encodeShare() {
-    const bytes = new Uint8Array(Math.ceil(SHARE_ORDER.length / 8));
-    SHARE_ORDER.forEach((code, i) => {
-      if (picked.has(code)) bytes[i >> 3] |= 1 << (i & 7);
-    });
+  const toB64 = (bytes) => {
     let bin = '';
     for (const b of bytes) bin += String.fromCharCode(b);
     return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  };
+  const fromB64 = (s) => atob(s.replace(/-/g, '+').replace(/_/g, '/'));
+
+  // v2: three bits per entity, so every level survives a link.
+  function encodeShare() {
+    const bytes = new Uint8Array(Math.ceil((SHARE_ORDER.length * 3) / 8));
+    SHARE_ORDER.forEach((code, i) => {
+      const lv = marks.get(code) || 0;
+      for (let b = 0; b < 3; b++) {
+        if (lv & (1 << b)) {
+          const at = i * 3 + b;
+          bytes[at >> 3] |= 1 << (at & 7);
+        }
+      }
+    });
+    return toB64(bytes);
   }
 
   function decodeShare(s) {
     try {
-      const bin = atob(s.replace(/-/g, '+').replace(/_/g, '/'));
+      const bin = fromB64(s);
       const out = [];
       SHARE_ORDER.forEach((code, i) => {
-        const byte = bin.charCodeAt(i >> 3);
-        if (byte & (1 << (i & 7))) out.push(code);
+        let lv = 0;
+        for (let b = 0; b < 3; b++) {
+          const at = i * 3 + b;
+          if (bin.charCodeAt(at >> 3) & (1 << (at & 7))) lv |= 1 << b;
+        }
+        if (lv >= 1 && lv <= 4) out.push([code, lv]);
+      });
+      return out;
+    } catch {
+      return null;
+    }
+  }
+
+  // v1 links predate levels: every bit set means "visited".
+  function decodeShareV1(s) {
+    try {
+      const bin = fromB64(s);
+      const out = [];
+      SHARE_ORDER.forEach((code, i) => {
+        if (bin.charCodeAt(i >> 3) & (1 << (i & 7))) out.push([code, 2]);
       });
       return out;
     } catch {
@@ -169,7 +226,7 @@
 
   function save() {
     try {
-      localStorage.setItem(STORE_KEY, [...picked].join(','));
+      localStorage.setItem(STORE_KEY, [...marks].map(([c, lv]) => c + lv).join(','));
     } catch { /* private mode */ }
   }
 
@@ -179,16 +236,28 @@
     } catch { /* private mode */ }
   }
 
+  function fromHash() {
+    const m = location.hash.match(/^#v([12])=([\w-]+)/);
+    if (!m) return null;
+    const list = m[1] === '2' ? decodeShare(m[2]) : decodeShareV1(m[2]);
+    return list && list.length ? list : null;
+  }
+
   function load() {
-    const hash = location.hash.match(/^#v1=([\w-]+)/);
-    const fromHash = hash && decodeShare(hash[1]);
-    if (fromHash && fromHash.length) {
-      fromHash.forEach((c) => byCode.has(c) && picked.add(c));
+    const shared = fromHash();
+    if (shared) {
+      shared.forEach(([c, lv]) => byCode.has(c) && marks.set(c, lv));
       return;
     }
     try {
       const raw = localStorage.getItem(STORE_KEY);
-      if (raw) raw.split(',').forEach((c) => byCode.has(c) && picked.add(c));
+      if (!raw) return;
+      for (const entry of raw.split(',')) {
+        // entries are CODE + level; the pre-levels format stored a bare CODE
+        const code = entry.slice(0, 2);
+        const lv = entry.length > 2 ? +entry.slice(2) : 2;
+        if (byCode.has(code) && lv >= 1 && lv <= 4) marks.set(code, lv);
+      }
     } catch { /* private mode */ }
   }
 
@@ -271,8 +340,11 @@
   }
 
   function paintShape(code) {
-    const on = picked.has(code);
-    for (const s of shapesOf(code)) s.classList.toggle('on', on);
+    const lv = marks.get(code) || 0;
+    for (const el of shapesOf(code)) {
+      el.classList.toggle('on', lv > 0);
+      for (const l of LEVELS) el.classList.toggle(`lv${l.id}`, lv === l.id);
+    }
   }
 
   /* ---------------- zoom & pan ---------------- */
@@ -435,8 +507,8 @@
     el.appendChild(name);
     if (state !== undefined) {
       const tag = document.createElement('span');
-      tag.className = state ? 'on' : 'off';
-      tag.textContent = state ? t('added') : t('removed');
+      tag.className = state ? `on lv${state}` : 'off';
+      tag.textContent = state ? t(LEVELS.find((l) => l.id === state).key) : t('cleared');
       el.appendChild(tag);
     }
     el.hidden = false;
@@ -446,20 +518,27 @@
 
   function toggle(code) {
     if (!byCode.has(code)) return;
-    if (picked.has(code)) picked.delete(code);
-    else picked.add(code);
+    // painting a country with the level it already has clears it
+    const next = marks.get(code) === brush ? 0 : brush;
+    if (next) marks.set(code, next);
+    else marks.delete(code);
     paintShape(code);
-    const row = els[code]?.row;
-    if (row) {
-      row.classList.toggle('on', picked.has(code));
-      row.setAttribute('aria-pressed', String(picked.has(code)));
-    }
-    flash(code, picked.has(code));
+    paintRow(code);
+    flash(code, next);
     updateScore();
     updateHeads();
     save();
     if (location.hash) history.replaceState(null, '', location.pathname + location.search);
     $('hint').classList.add('gone');
+  }
+
+  function paintRow(code) {
+    const row = els[code]?.row;
+    if (!row) return;
+    const lv = marks.get(code) || 0;
+    row.classList.toggle('on', lv > 0);
+    for (const l of LEVELS) row.classList.toggle(`lv${l.id}`, lv === l.id);
+    row.setAttribute('aria-pressed', String(lv > 0));
   }
 
   /* ---------------- list ---------------- */
@@ -476,12 +555,11 @@
         `<span class="nm"></span>${f.s !== 1 ? `<span class="tag"></span>` : ''}`;
       row.querySelector('.nm').textContent = nameOf(f);
       if (f.s !== 1) row.querySelector('.tag').textContent = t('territory');
-      row.classList.toggle('on', picked.has(f.c));
-      row.setAttribute('aria-pressed', String(picked.has(f.c)));
       row.onclick = () => toggle(f.c);
       row.onmouseenter = () => shapesOf(f.c).forEach((s) => s.classList.add('hl'));
       row.onmouseleave = () => shapesOf(f.c).forEach((s) => s.classList.remove('hl'));
       els[f.c] = Object.assign(els[f.c] || {}, { row });
+      paintRow(f.c);
       frag.appendChild(row);
     }
     const headSel = document.createElement('div');
@@ -512,7 +590,7 @@
         !needle || fold(f.n).includes(needle) || fold(f.t).includes(needle) || f.c.toLowerCase() === needle;
       const hit = matchesText && (!activeRegion || f.r === activeRegion);
       row.hidden = !hit;
-      if (hit) picked.has(f.c) ? onShown++ : offShown++;
+      if (hit) (marks.has(f.c) ? onShown++ : offShown++);
     }
     updateHeads(onShown, offShown);
 
@@ -535,7 +613,7 @@
       for (const f of FEATURES) {
         const row = els[f.c]?.row;
         if (!row || row.hidden) continue;
-        picked.has(f.c) ? onShown++ : offShown++;
+        marks.has(f.c) ? onShown++ : offShown++;
       }
     }
     const sel = $('headSel');
@@ -594,7 +672,32 @@
     $('popAbs').textContent = `${compact(s.people)} ${t('peopleUnit')}`;
 
     regionCounts = s.per;
+    lastCounts = s.byLevel;
+    renderBrush(s.byLevel);
     renderRegions();
+  }
+
+  function renderBrush(counts) {
+    $('brush').replaceChildren(
+      ...LEVELS.map((l) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = `lvchip lv${l.id}`;
+        b.classList.toggle('on', brush === l.id);
+        b.setAttribute('aria-pressed', String(brush === l.id));
+        const dot = document.createElement('i');
+        const name = document.createElement('b');
+        name.textContent = t(l.key);
+        const n = document.createElement('span');
+        n.textContent = counts ? counts[l.id] || 0 : 0;
+        b.append(dot, name, n);
+        b.onclick = () => {
+          brush = l.id;
+          renderBrush(lastCounts);
+        };
+        return b;
+      })
+    );
   }
 
   function renderRegions() {
@@ -646,9 +749,12 @@
     let land = 0;
     let people = 0;
     const per = {};
-    for (const code of picked) {
+    const byLevel = { 1: 0, 2: 0, 3: 0, 4: 0 };
+    for (const [code, lv] of marks) {
       const f = byCode.get(code);
       if (!f) continue;
+      byLevel[lv]++;
+      if (!BEEN.has(lv)) continue; // a wish is not a visit
       land += f.k || 0;
       people += f.p || 0;
       if (f.s === 1) {
@@ -660,6 +766,8 @@
       sov,
       terr,
       per,
+      byLevel,
+      wish: byLevel[4],
       land,
       people,
       total: SOVEREIGN_TOTAL,
@@ -678,7 +786,7 @@
   const withPct = (v) => (lang === 'tr' ? `%${pctText(v)}` : `${pctText(v)}%`);
 
   function shareUrl() {
-    return `${location.origin}${location.pathname}#v1=${encodeShare()}`;
+    return `${location.origin}${location.pathname}#v2=${encodeShare()}`;
   }
 
   function shareMessage() {
@@ -688,13 +796,14 @@
 
   function buildCardSVG(size) {
     const s = stats();
-    const selected = FEATURES.filter((f) => picked.has(f.c) && f.s === 1)
+    const selected = FEATURES.filter((f) => been(f.c) && f.s === 1)
       .map(nameOf)
       .sort((a, b) => a.localeCompare(b, lang));
     return EarthCard.build({
       size,
       world: WORLD,
-      picked,
+      marks,
+      levels: LEVELS.map((l) => ({ id: l.id, label: t(l.key), count: s.byLevel[l.id], color: cssVar(`--lv${l.id}`) })),
       stats: s,
       regions: REGIONS.map((r) => ({ label: REGION_NAMES[lang][r], have: s.per[r] || 0, total: REGION_TOTAL[r] })),
       names: selected,
@@ -714,7 +823,7 @@
         bg: cssVar('--bg-2'),
         ocean: cssVar('--ocean'),
         land: cssVar('--land'),
-        on: cssVar('--picked'),
+        on: cssVar('--lv2'),
         ink: cssVar('--ink'),
         accent: cssVar('--accent'),
       },
@@ -855,6 +964,7 @@
     for (const el of document.querySelectorAll('[data-i18n]')) el.textContent = t(el.dataset.i18n);
     for (const el of document.querySelectorAll('[data-i18n-ph]')) el.placeholder = t(el.dataset.i18nPh);
     for (const el of document.querySelectorAll('[data-i18n-title]')) el.title = t(el.dataset.i18nTitle);
+    if (resetArmed) disarmReset();
     if (matchMedia('(hover: none)').matches) $('hint').textContent = t('hintTouch');
     $('langBtn').textContent = lang === 'en' ? 'TR' : 'EN';
     $('langBtn').title = lang === 'en' ? 'Türkçe' : 'English';
@@ -864,6 +974,13 @@
       renderSizes();
       renderCard();
     }
+  }
+
+  function disarmReset() {
+    clearTimeout(resetTimer);
+    resetArmed = false;
+    $('resetBtn').textContent = t('reset');
+    $('resetBtn').classList.remove('danger');
   }
 
   function applyTheme() {
@@ -878,7 +995,7 @@
     applyView();
     initZoom();
     applyLang();
-    for (const code of picked) paintShape(code);
+    for (const code of marks.keys()) paintShape(code);
 
     $('search').addEventListener('input', (e) => filterList(e.target.value));
     $('search').addEventListener('keydown', (e) => {
@@ -889,12 +1006,22 @@
         e.target.select();
       }
     });
+    // two-step reset instead of a browser confirm(): the second tap does it
     $('resetBtn').onclick = () => {
-      if (!picked.size || !confirm(t('resetAsk'))) return;
-      const all = [...picked];
-      picked.clear();
+      if (!marks.size) return;
+      if (!resetArmed) {
+        resetArmed = true;
+        $('resetBtn').textContent = t('resetAsk');
+        $('resetBtn').classList.add('danger');
+        clearTimeout(resetTimer);
+        resetTimer = setTimeout(disarmReset, 3500);
+        return;
+      }
+      disarmReset();
+      const all = [...marks.keys()];
+      marks.clear();
       all.forEach(paintShape);
-      all.forEach((c) => els[c]?.row?.classList.remove('on'));
+      all.forEach(paintRow);
       updateScore();
       save();
     };
@@ -919,14 +1046,13 @@
     };
     addEventListener('resize', sizeMarkers);
     addEventListener('hashchange', () => {
-      const m = location.hash.match(/^#v1=([\w-]+)/);
-      const codes = m && decodeShare(m[1]);
+      const codes = fromHash();
       if (!codes) return;
-      const all = new Set([...picked, ...codes]);
-      picked.clear();
-      codes.forEach((c) => byCode.has(c) && picked.add(c));
-      all.forEach(paintShape);
-      all.forEach((c) => els[c]?.row?.classList.toggle('on', picked.has(c)));
+      const touched = new Set([...marks.keys(), ...codes.map(([c]) => c)]);
+      marks.clear();
+      codes.forEach(([c, lv]) => byCode.has(c) && marks.set(c, lv));
+      touched.forEach(paintShape);
+      touched.forEach(paintRow);
       updateScore();
       save();
     });

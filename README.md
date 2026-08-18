@@ -15,6 +15,10 @@ Inspired by [turkeyvisited](https://ozanyerli.github.io/turkeyvisited/), but for
   territories** (Greenland, Puerto Rico, Hong Kong, Antarctica…) selectable and counted separately.
 - **Micro-states are clickable** — Singapore, Malta, Monaco, Tuvalu and friends get a dot marker so they are
   reachable even at 1× zoom, plus a searchable list for anything easier to find by name.
+- **Four ways to mark a country** — *lived*, *visited*, *transit* and *want to go*. A brush selector in the
+  panel picks the level a click paints with; clicking a country with the level it already has clears it.
+  Lived + visited + transit feed the score, land and population; the wish list is counted on its own and
+  drawn in amber.
 - **Selected countries float to the top** of the list, under a `Selected · N` header, so your own map is
   always the first thing you see.
 - **Continents are filters** — click Africa / Americas / Asia / Europe / Oceania to zoom the map to that
@@ -33,7 +37,8 @@ Inspired by [turkeyvisited](https://ozanyerli.github.io/turkeyvisited/), but for
 - **Direct sharing** — *Share image* uses the Web Share API, handing the PNG straight to the device's share
   sheet, which is where Instagram, WhatsApp, X and the rest already live. Browsers without a share sheet fall
   back to saving the card or copying it to the clipboard.
-- **Copy link** — your selection is encoded in the URL (`#v1=…`), so a link restores the exact map.
+- **Copy link** — your selection is encoded in the URL (`#v2=…`: three bits per country, so levels survive
+  the trip), and older `#v1=` links still open, importing everything as *visited*.
   Selections also persist in `localStorage`. A static `og.png` gives the link a proper preview card.
 
 ## Running it
