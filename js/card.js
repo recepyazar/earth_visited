@@ -98,7 +98,33 @@ window.EarthCard = (() => {
     const sub = s.terr ? `${o.texts.countries} · ${s.terr} ${o.texts.territories}` : o.texts.countries;
     out.push(text(x, subY, sub, { size: cfg.title * 0.8, weight: 500, fill: c.ink, op: 0.55 }));
 
-    return { svg: out.join(''), bottom: subY };
+    // land + population coverage, side by side under the headline
+    let extrasBottom = subY;
+    if (o.extras && o.extras.length) {
+      const size = cfg.title * 0.78;
+      const gap = cfg.title * 0.7;
+      const colW = (width - gap * (o.extras.length - 1)) / o.extras.length;
+      const top = subY + cfg.title * 1.5;
+      o.extras.forEach((ex, i) => {
+        const ex0 = x + i * (colW + gap);
+        out.push(text(ex0, top, ex.label.toUpperCase(), { size: size * 0.72, weight: 700, fill: c.ink, op: 0.45 }));
+        out.push(text(ex0, top + size * 1.5, ex.value, { size: size * 1.35, weight: 800, fill: c.ink, op: 0.92 }));
+        const barY = top + size * 2.1;
+        const barH = size * 0.34;
+        out.push(
+          `<rect x="${r(ex0)}" y="${r(barY)}" width="${r(colW * 0.85)}" height="${r(barH)}" rx="${r(barH / 2)}" fill="${c.ink}" opacity=".12"/>`
+        );
+        if (ex.ratio > 0.004) {
+          out.push(
+            `<rect x="${r(ex0)}" y="${r(barY)}" width="${r(colW * 0.85 * Math.min(1, ex.ratio))}" height="${r(barH)}" rx="${r(barH / 2)}" fill="${c.on}"/>`
+          );
+        }
+        out.push(text(ex0, barY + barH + size * 1.15, ex.sub, { size: size * 0.8, weight: 500, fill: c.ink, op: 0.5 }));
+        extrasBottom = Math.max(extrasBottom, barY + barH + size * 1.15);
+      });
+    }
+
+    return { svg: out.join(''), bottom: extrasBottom };
   }
 
   /* ---- continent rows: label, progress bar, count ---- */
@@ -165,18 +191,24 @@ window.EarthCard = (() => {
     } else {
       const inner = W - pad * 2;
       const isStory = o.size === 'story' && o.names.length > 0;
-      const contentBottom = footY - cfg.foot * 2.6;
+      const contentBottom = footY - cfg.foot * 3.4;
       const lineH = cfg.reg * 1.6;
       const perLine = 3;
 
       const score = scoreBlock(o, cfg, pad, pad, inner, true);
-      const mapH = inner * CROP_RATIO;
       const rowCount = Math.ceil(o.regions.length / cfg.cols);
       const rowsH = rowCount * cfg.reg * 2.1;
 
-      // base gaps first, then hand the leftover height back to them so the card
-      // fills its canvas instead of stacking everything against the top edge
+      // the map takes whatever height is left, so adding a stat block can never
+      // push the continent rows onto the footer
       const base = { g1: cfg.title * 1.4, g2: cfg.reg * 1.6, g3: cfg.reg * 1.9 };
+      const roomForMap = contentBottom - (score.bottom + base.g1 + base.g2 + rowsH);
+      const mapW = Math.min(inner, Math.max(inner * 0.5, roomForMap / CROP_RATIO));
+      const mapH = mapW * CROP_RATIO;
+      const mapX = pad + (inner - mapW) / 2;
+
+      // then hand any leftover height back to the gaps so the card fills its canvas
+      // instead of stacking everything against the top edge
       let namesLines = 0;
       if (isStory) {
         const room = contentBottom - (score.bottom + base.g1 + mapH + base.g2 + rowsH + base.g3);
@@ -197,7 +229,7 @@ window.EarthCard = (() => {
       parts.push(score.svg);
 
       const mapY = score.bottom + g1;
-      parts.push(mapBlock(o, pad, mapY, inner).svg);
+      parts.push(mapBlock(o, mapX, mapY, mapW).svg);
 
       const gapX = pad * 0.6;
       const colW = (inner - gapX * (cfg.cols - 1)) / cfg.cols;

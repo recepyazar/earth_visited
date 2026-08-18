@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "node gen.mjs"
+    "build": "node gen.mjs",
+    "population": "node fetch-population.mjs"
   },
   "dependencies": {
     "d3-geo": "^3.1.1",

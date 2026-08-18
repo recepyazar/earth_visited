@@ -19,6 +19,8 @@
   const FEATURES = WORLD.f;
   const byCode = new Map(FEATURES.map((f) => [f.c, f]));
   const SOVEREIGN_TOTAL = FEATURES.filter((f) => f.s === 1).length;
+  const WORLD_LAND = WORLD.totals.k; // km², every entity on the map
+  const WORLD_POP = WORLD.totals.p;
   const SHARE_ORDER = FEATURES.map((f) => f.c).sort(); // stable bit order for share links
 
   const REGION_BOX = WORLD.regions;
@@ -49,6 +51,9 @@
       saved: 'Image saved',
       exportTitle: 'Countries I have visited',
       allRegions: 'Whole world',
+      land: 'Land area',
+      people: 'Population',
+      peopleUnit: 'people',
       shareOpen: 'Share',
       shareTitle: 'Share your map',
       shareImage: 'Share image',
@@ -89,6 +94,9 @@
       saved: 'Görsel kaydedildi',
       exportTitle: 'Gezdiğim ülkeler',
       allRegions: 'Tüm dünya',
+      land: 'Kara alanı',
+      people: 'Nüfus',
+      peopleUnit: 'kişi',
       shareOpen: 'Paylaş',
       shareTitle: 'Haritanı paylaş',
       shareImage: 'Görseli paylaş',
@@ -572,24 +580,20 @@
 
   /* ---------------- score ---------------- */
   function updateScore() {
-    let sov = 0;
-    let terr = 0;
-    const perRegion = {};
-    for (const code of picked) {
-      const f = byCode.get(code);
-      if (!f) continue;
-      if (f.s === 1) {
-        sov++;
-        perRegion[f.r] = (perRegion[f.r] || 0) + 1;
-      } else terr++;
-    }
-    $('count').textContent = sov;
-    $('terr').textContent = terr;
-    const pct = Math.round((sov / SOVEREIGN_TOTAL) * 100);
-    $('pct').textContent = `${pct}%`;
-    $('barfill').style.width = `${(sov / SOVEREIGN_TOTAL) * 100}%`;
+    const s = stats();
+    $('count').textContent = s.sov;
+    $('terr').textContent = s.terr;
+    $('pct').textContent = withPct(s.pct);
+    $('barfill').style.width = `${(s.sov / SOVEREIGN_TOTAL) * 100}%`;
 
-    regionCounts = perRegion;
+    $('landPct').textContent = withPct(s.landPct);
+    $('landBar').style.width = `${s.landPct}%`;
+    $('landAbs').textContent = `${compact(s.land)} km²`;
+    $('popPct').textContent = withPct(s.popPct);
+    $('popBar').style.width = `${s.popPct}%`;
+    $('popAbs').textContent = `${compact(s.people)} ${t('peopleUnit')}`;
+
+    regionCounts = s.per;
     renderRegions();
   }
 
@@ -639,17 +643,39 @@
   function stats() {
     let sov = 0;
     let terr = 0;
+    let land = 0;
+    let people = 0;
     const per = {};
     for (const code of picked) {
       const f = byCode.get(code);
       if (!f) continue;
+      land += f.k || 0;
+      people += f.p || 0;
       if (f.s === 1) {
         sov++;
         per[f.r] = (per[f.r] || 0) + 1;
       } else terr++;
     }
-    return { sov, terr, per, total: SOVEREIGN_TOTAL, pct: Math.round((sov / SOVEREIGN_TOTAL) * 100) };
+    return {
+      sov,
+      terr,
+      per,
+      land,
+      people,
+      total: SOVEREIGN_TOTAL,
+      pct: Math.round((sov / SOVEREIGN_TOTAL) * 100),
+      landPct: (land / WORLD_LAND) * 100,
+      popPct: (people / WORLD_POP) * 100,
+    };
   }
+
+  /* ---------------- number formatting ---------------- */
+  const locale = () => (lang === 'tr' ? 'tr-TR' : 'en-US');
+  // one decimal below 10% so a single country still registers
+  const pctText = (v) => new Intl.NumberFormat(locale(), { maximumFractionDigits: v < 10 ? 1 : 0 }).format(v);
+  const compact = (v) =>
+    new Intl.NumberFormat(locale(), { notation: 'compact', maximumFractionDigits: 1 }).format(v);
+  const withPct = (v) => (lang === 'tr' ? `%${pctText(v)}` : `${pctText(v)}%`);
 
   function shareUrl() {
     return `${location.origin}${location.pathname}#v1=${encodeShare()}`;
@@ -672,11 +698,15 @@
       stats: s,
       regions: REGIONS.map((r) => ({ label: REGION_NAMES[lang][r], have: s.per[r] || 0, total: REGION_TOTAL[r] })),
       names: selected,
+      extras: [
+        { label: t('land'), value: withPct(s.landPct), sub: `${compact(s.land)} km²`, ratio: s.landPct / 100 },
+        { label: t('people'), value: withPct(s.popPct), sub: `${compact(s.people)} ${t('peopleUnit')}`, ratio: s.popPct / 100 },
+      ],
       texts: {
         title: t('cardTitle'),
         countries: t('countries'),
         territories: t('territories'),
-        pct: lang === 'tr' ? `%${s.pct}` : `${s.pct}%`,
+        pct: withPct(s.pct),
         more: t('cardMore'),
         url: (location.host + location.pathname).replace(/\/(index\.html)?$/, ''),
       },

@@ -20,6 +20,10 @@ Inspired by [turkeyvisited](https://ozanyerli.github.io/turkeyvisited/), but for
 - **Continents are filters** — click Africa / Americas / Asia / Europe / Oceania to zoom the map to that
   continent, dim (and lock) everything outside it, and narrow the list to its countries; the *Whole world*
   chip or a second click on the active continent clears it. Search stacks on top of the filter.
+- **Land and population coverage** — country count treats Malta and Russia alike, so the panel and the share
+  card also show what share of the Earth's land (150.0M km², Antarctica included) and of its people
+  (8.22 bn) your selection covers. Visiting 48 countries can mean 25% of the countries but 47% of the land
+  and 65% of humanity.
 - **Progress by region** — Africa, Americas, Asia, Europe, Oceania.
 - **English / Turkish** UI and country names, light / dark theme, both remembered.
 - **Share sheet** — one *Share* button opens a card preview in three formats: **landscape** 1200×630 (link
@@ -63,6 +67,7 @@ js/card.js          share-card renderer (SVG, one layout per format)
 js/app.js           map rendering, selection, zoom/pan, i18n, share sheet
 og.png              static link-preview image (regenerate with tools/gen-og.md steps)
 tools/gen.mjs       regenerates js/data.js
+tools/fetch-population.mjs   refreshes tools/population.json from the World Bank
 ```
 
 ## Regenerating the map data
@@ -72,8 +77,13 @@ tools/gen.mjs       regenerates js/data.js
 ```bash
 cd tools
 npm install
-npm run build
+npm run build        # rebuilds js/data.js
+npm run population   # optional: refresh tools/population.json first
 ```
+
+Population numbers are committed as `tools/population.json` so the map build never needs the network. Places
+the World Bank does not track — Taiwan, Kosovo, Vatican City, small territories — come from a short
+`POP_EXTRA` table in `gen.mjs`.
 
 It projects Natural Earth 1:50m country polygons with `d3-geo`'s Natural Earth projection into a
 1000 × 520 viewBox, simplifies them (topojson weight `0.0004`, then a 0.2 px screen-space filter — roughly
@@ -99,6 +109,7 @@ other glyph stays on the system font.
 ## Data sources
 
 - [world-atlas](https://github.com/topojson/world-atlas) — Natural Earth 1:50m, public domain.
-- [world-countries](https://github.com/mledoze/countries) — ISO codes, names and translations, ODbL.
+- [world-countries](https://github.com/mledoze/countries) — ISO codes, names, translations and land area, ODbL.
+- [World Bank](https://data.worldbank.org/indicator/SP.POP.TOTL) — population (SP.POP.TOTL, 2025 values), CC-BY 4.0.
 - [Twemoji Country Flags](https://github.com/talkjs/country-flag-emoji-polyfill) — flag webfont; packaging MIT
   (TalkJS), artwork CC-BY 4.0 (Twitter/Twemoji).

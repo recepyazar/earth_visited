@@ -11,6 +11,7 @@ import { geoNaturalEarth1, geoPath } from 'd3-geo';
 import { feature } from 'topojson-client';
 import { presimplify, simplify } from 'topojson-simplify';
 import wcRaw from 'world-countries/countries.json' with { type: 'json' };
+import population from './population.json' with { type: 'json' };
 
 const WIDTH = 1000; // viewBox width the paths are baked for
 const SIMPLIFY = 0.0004; // topojson weight: drops sub-pixel detail before projecting
@@ -88,17 +89,31 @@ const byA2 = new Map(wcRaw.map((c) => [c.cca2, c]));
 // UN members + the two observer states = the canonical 195.
 const isSovereign = (c) => c.unMember || c.cca2 === 'VA' || c.cca2 === 'PS';
 
+// Places the World Bank's indicator does not cover, by alpha-2. Rounded UN /
+// national estimates, ~2023; only Taiwan and Kosovo move the world total at all.
+// France's overseas departments are absent on purpose: Natural Earth draws them
+// as part of France, so their people are already counted under FR.
+const POP_EXTRA = {
+  TW: 23400000, XK: 1760000, EH: 590000, VA: 825, JE: 103000, GG: 64000, AX: 30500,
+  BQ: 27000, AI: 15900, CK: 15000, WF: 11500, PM: 5800, SH: 5300, MS: 4400, FK: 3700,
+  BL: 11000, SJ: 2900, NF: 2200, NU: 1900, CX: 1700, TK: 1600, CC: 600, PN: 50,
+  AQ: 0, BV: 0, GS: 0, HM: 0, IO: 0, TF: 0, UM: 0,
+};
+
 // Natural Earth shapes that carry no ISO code of their own.
 const SPECIAL = {
   Somaliland: { merge: 'SO' },
   'N. Cyprus': { merge: 'CY' },
-  Kosovo: { own: { c: 'XK', n: 'Kosovo', t: 'Kosova', g: '🇽🇰', r: 'Europe', s: 2 } },
+  Kosovo: { own: { c: 'XK', n: 'Kosovo', t: 'Kosova', g: '🇽🇰', r: 'Europe', s: 2, k: 10908, p: POP_EXTRA.XK } },
   'Indian Ocean Ter.': { decor: true },
   'Siachen Glacier': { decor: true },
 };
 
 // Too small for Natural Earth 50m to include at all.
 const EXTRA_POINTS = [{ a2: 'TV', lon: 179.2, lat: -8.52 }];
+
+
+const popOf = (a2, a3) => POP_EXTRA[a2] ?? population[a3]?.p ?? 0;
 
 const metaOf = (wc) => ({
   c: wc.cca2,
@@ -107,6 +122,8 @@ const metaOf = (wc) => ({
   g: wc.flag,
   r: wc.region || '—',
   s: isSovereign(wc) ? 1 : 2,
+  k: Math.round(wc.area || 0), // km²
+  p: popOf(wc.cca2, wc.cca3),
 });
 
 const out = new Map();
@@ -207,11 +224,18 @@ for (const r of REGIONS) {
 /* ---------- emit ---------- */
 for (const f of feats) delete f.main;
 
+// Denominators: every entity on the map, so Antarctica's 14M km² counts as land
+// and the population total lands on the world figure.
+const totals = {
+  k: feats.reduce((sum, f) => sum + (f.k || 0), 0),
+  p: feats.reduce((sum, f) => sum + (f.p || 0), 0),
+};
+
 const js =
   `// GENERATED FILE — do not edit. Run \`npm run build\` in tools/ to regenerate.\n` +
   `// Natural Earth 1:50m via world-atlas, metadata via world-countries.\n` +
   `// ${feats.length} selectable entities, of which ${sovereign.length} sovereign countries.\n` +
-  `window.WORLD = ${JSON.stringify({ w: WIDTH, h: HEIGHT, regions, decor, f: feats })};\n`;
+  `window.WORLD = ${JSON.stringify({ w: WIDTH, h: HEIGHT, regions, totals, decor, f: feats })};\n`;
 writeFileSync(OUT, js);
 for (const r of REGIONS) console.log(`region ${r.padEnd(9)} [${regions[r].join(', ')}]`);
 
@@ -220,4 +244,7 @@ console.log(`entities       ${feats.length} (${sovereign.length} sovereign, ${fe
 console.log(`decor shapes   ${decor.length}${unmatched.length ? ` (unmatched: ${unmatched.join(', ')})` : ''}`);
 console.log(`missing        ${missing.join(', ') || 'none'}`);
 console.log(`marker-sized   ${feats.filter((f) => f.a < 6).length} entities under 6px²`);
+console.log(`land total     ${(totals.k / 1e6).toFixed(1)} M km² (Earth's land ≈ 148.9)`);
+console.log(`people total   ${(totals.p / 1e9).toFixed(2)} bn`);
+console.log(`no population  ${feats.filter((f) => !f.p).map((f) => f.c).join(', ') || 'none'}`);
 console.log(`data.js        ${Math.round(js.length / 1024)} KB`);
