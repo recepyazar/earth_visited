@@ -15,7 +15,10 @@ import population from './population.json' with { type: 'json' };
 
 // UI language code -> world-countries translation key. English is the base name,
 // so a translation is only stored when it differs from it.
-const LANGS = { tr: 'tur', de: 'deu', es: 'spa', fr: 'fra', it: 'ita', pt: 'por', ru: 'rus' };
+const LANGS = {
+  tr: 'tur', de: 'deu', es: 'spa', fr: 'fra', it: 'ita', pt: 'por', ru: 'rus',
+  zh: 'zho', ar: 'ara', ja: 'jpn', ko: 'kor',
+};
 
 const WIDTH = 1000; // viewBox width the paths are baked for
 const SIMPLIFY = 0.0004; // topojson weight: drops sub-pixel detail before projecting
@@ -148,6 +151,10 @@ const SPECIAL = {
       n: 'Turkish Republic of Northern Cyprus',
       L: {
         tr: 'Kuzey Kıbrıs Türk Cumhuriyeti',
+        zh: '北塞浦路斯土耳其共和国',
+        ar: 'الجمهورية التركية لشمال قبرص',
+        ja: '北キプロス・トルコ共和国',
+        ko: '북키프로스 튀르크 공화국',
         de: 'Türkische Republik Nordzypern',
         es: 'República Turca del Norte de Chipre',
         fr: 'République turque de Chypre du Nord',
@@ -160,7 +167,7 @@ const SPECIAL = {
   },
   Kosovo: {
     own: {
-      c: 'XK', n: 'Kosovo', L: { tr: 'Kosova', ru: 'Косово' }, g: '🇽🇰', r: 'Europe', s: 2,
+      c: 'XK', n: 'Kosovo', L: { tr: 'Kosova', ru: 'Косово', zh: '科索沃', ar: 'كوسوفو', ja: 'コソボ', ko: '코소보' }, g: '🇽🇰', r: 'Europe', s: 2,
       k: 10908, p: POP_EXTRA.XK,
     },
   },

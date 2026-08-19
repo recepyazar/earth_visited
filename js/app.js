@@ -94,59 +94,9 @@
   const list = $('list');
 
   /* ---------------- persistence ---------------- */
-  const toB64 = (bytes) => {
-    let bin = '';
-    for (const b of bytes) bin += String.fromCharCode(b);
-    return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-  };
-  const fromB64 = (s) => atob(s.replace(/-/g, '+').replace(/_/g, '/'));
-
-  // v2: three bits per entity, so every level survives a link.
-  function encodeShare() {
-    const bytes = new Uint8Array(Math.ceil((SHARE_ORDER.length * 3) / 8));
-    SHARE_ORDER.forEach((code, i) => {
-      const lv = marks.get(code) || 0;
-      for (let b = 0; b < 3; b++) {
-        if (lv & (1 << b)) {
-          const at = i * 3 + b;
-          bytes[at >> 3] |= 1 << (at & 7);
-        }
-      }
-    });
-    return toB64(bytes);
-  }
-
-  function decodeShare(s) {
-    try {
-      const bin = fromB64(s);
-      const out = [];
-      SHARE_ORDER.forEach((code, i) => {
-        let lv = 0;
-        for (let b = 0; b < 3; b++) {
-          const at = i * 3 + b;
-          if (bin.charCodeAt(at >> 3) & (1 << (at & 7))) lv |= 1 << b;
-        }
-        if (lv >= 1 && lv <= 4) out.push([code, lv]);
-      });
-      return out;
-    } catch {
-      return null;
-    }
-  }
-
-  // v1 links predate levels: every bit set means "visited".
-  function decodeShareV1(s) {
-    try {
-      const bin = fromB64(s);
-      const out = [];
-      SHARE_ORDER.forEach((code, i) => {
-        if (bin.charCodeAt(i >> 3) & (1 << (i & 7))) out.push([code, 2]);
-      });
-      return out;
-    } catch {
-      return null;
-    }
-  }
+  const encodeShare = () => Share.encode(SHARE_ORDER, marks);
+  const decodeShare = (str) => Share.decode(SHARE_ORDER, str);
+  const decodeShareV1 = (str) => Share.decodeV1(SHARE_ORDER, str);
 
   function save() {
     try {
@@ -191,8 +141,8 @@
       saved = JSON.parse(localStorage.getItem(PREF_KEY) || 'null');
     } catch { /* ignore */ }
     const known = (c) => LANGS.some((l) => l.code === c);
-    const guess = (navigator.language || '').slice(0, 2).toLowerCase();
-    lang = known(saved?.lang) ? saved.lang : known(guess) ? guess : 'en';
+    const systemLangs = navigator.languages && navigator.languages.length ? navigator.languages : [navigator.language];
+    lang = I18N.pick(systemLangs, saved?.lang);
     theme = ['dark', 'light', 'auto'].includes(saved?.theme) ? saved.theme : 'auto';
     colors = saved && typeof saved.colors === 'object' && saved.colors ? { ...saved.colors } : {};
     mode = saved?.view === 'globe' ? 'globe' : 'map';
@@ -263,6 +213,25 @@
     map.appendChild(scene);
     map.addEventListener('pointermove', onMapHover);
     map.addEventListener('pointerleave', hideTip);
+  }
+
+  // A micro-state's finger-sized target covers its neighbours: at world zoom the
+  // whole of Germany is barely wider than Luxembourg's 18px circle. So a press on
+  // one of those circles only counts as the micro-state when it lands on the dot
+  // itself; otherwise the country underneath wins.
+  function codeAt(target, x, y) {
+    const code = target && target.dataset && target.dataset.code;
+    if (!code || !target.classList.contains('hit')) return code || null;
+    const dot = els[code] && els[code].extra;
+    if (dot) {
+      const r = dot.getBoundingClientRect();
+      const near = Math.hypot(x - (r.left + r.width / 2), y - (r.top + r.height / 2));
+      if (near <= Math.max(5, r.width * 0.75)) return code;
+    } else {
+      return code; // marker-only entity: the circle is all there is
+    }
+    const under = document.elementsFromPoint(x, y).find((el) => el.classList.contains('pickable'));
+    return (under && under.dataset.code) || code;
   }
 
   function shapesOf(code) {
@@ -337,7 +306,7 @@
       dragged = 0;
       // Remember what was under the finger/cursor: the toggle happens on pointerup,
       // because capturing the pointer for panning would retarget a later click event.
-      pressCode = pointers.size === 1 ? (e.target.dataset && e.target.dataset.code) || null : null;
+      pressCode = pointers.size === 1 ? codeAt(e.target, e.clientX, e.clientY) : null;
       previewed = false;
       clearTimeout(pressTimer);
       if (pressCode) {
@@ -407,7 +376,7 @@
 
   /* ---------------- interaction ---------------- */
   function onMapHover(e) {
-    const code = e.target.dataset && e.target.dataset.code;
+    const code = codeAt(e.target, e.clientX, e.clientY);
     if (!code) return hideTip();
     showTip(code, e.clientX, e.clientY);
   }
@@ -690,7 +659,7 @@
   /* ---------------- globe ---------------- */
   // ?v= keeps a cached stylesheet from ever pairing with a newer script; bump it
   // in index.html and here together when deploying
-  const ASSET_V = 'v=7';
+  const ASSET_V = 'v=10';
   const GLOBE_FILES = [
     'js/vendor/d3-array-shim.js',
     'js/vendor/d3-geo.min.js',
@@ -1018,7 +987,9 @@
   }
 
   function applyLang() {
+    const meta = LANGS.find((l) => l.code === lang) || LANGS[0];
     document.documentElement.lang = lang;
+    document.documentElement.dir = meta.dir || 'ltr'; // Arabic reads right to left
     document.title = t('title');
     for (const el of document.querySelectorAll('[data-i18n]')) el.textContent = t(el.dataset.i18n);
     for (const el of document.querySelectorAll('[data-i18n-ph]')) el.placeholder = t(el.dataset.i18nPh);

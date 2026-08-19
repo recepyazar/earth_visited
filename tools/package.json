@@ -4,7 +4,10 @@
   "type": "module",
   "scripts": {
     "build": "node gen.mjs",
-    "population": "node fetch-population.mjs"
+    "population": "node fetch-population.mjs",
+    "test": "node --test \"test/unit/*.test.mjs\"",
+    "test:browser": "node --test \"test/browser/*.test.mjs\"",
+    "test:all": "npm test && npm run test:browser"
   },
   "dependencies": {
     "d3-geo": "^3.1.1",
@@ -12,5 +15,8 @@
     "topojson-simplify": "^3.0.3",
     "world-atlas": "^2.0.2",
     "world-countries": "^5.0.0"
+  },
+  "devDependencies": {
+    "puppeteer": "^25.8.0"
   }
 }

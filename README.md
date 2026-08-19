@@ -30,9 +30,11 @@ Inspired by [turkeyvisited](https://ozanyerli.github.io/turkeyvisited/), but for
   (8.22 bn) your selection covers. Visiting 48 countries can mean 25% of the countries but 47% of the land
   and 65% of humanity.
 - **Progress by region** — Africa, Americas, Asia, Europe, Oceania.
-- **Eight languages** — English, Türkçe, Deutsch, Español, Français, Italiano, Português, Русский, for both
-  the interface and the country names; search matches any of them, so typing “Germany” finds it while the UI
-  is in Turkish.
+- **Twelve languages** — English, Türkçe, Deutsch, Español, Français, Italiano, Português, Русский, 中文,
+  العربية, 日本語, 한국어, for both the interface and the country names; search matches any of them, so typing
+  “Germany” finds it while the UI is in Turkish. Arabic flips the whole page right-to-left. The site opens in
+  the visitor's language when it is one of these — walking the browser's ordered list, not just its first
+  entry — and in English otherwise.
 - **Settings** — one button in the header opens language, theme (dark / light / follow the system) and a
   colour picker for each of the four mark types. Everything is remembered, and the share cards pick up your
   colours.
@@ -96,6 +98,9 @@ js/globe.js         globe renderer (canvas + d3-geo), loaded on demand
 js/globe-data.js    GENERATED — country outlines in lon/lat for the globe
 js/vendor/          d3-geo build plus the three d3-array helpers it needs
 js/i18n.js          interface strings for the eight languages
+js/share.js         share-link codec, shared by the app and the tests
+tools/test/unit/    node --test suite (no browser)
+tools/test/browser/ puppeteer suite (real Chrome)
 js/card.js          share-card renderer (SVG, one layout per format)
 js/app.js           map rendering, selection, zoom/pan, i18n, share sheet
 og.png              static link-preview image
@@ -143,6 +148,41 @@ Windows ships no country-flag emoji font, so `🇹🇷` falls back to the letter
 draw the flag. `assets/fonts/TwemojiCountryFlags.woff2` (78 KB) is declared with
 `unicode-range: U+1F1E6-1F1FF`, so browsers download it only for the regional-indicator characters and every
 other glyph stays on the system font.
+
+## Tests
+
+```bash
+cd tools
+npm test           # 36 checks, ~130 ms, no browser
+npm run test:browser   # 13 checks in a real Chrome (puppeteer brings its own)
+npm run test:all
+```
+
+The unit suite loads the browser modules into the process by evaluating them against a fake `window`:
+
+- **data** — the count the UI promises (196 countries, 42 territories), unique codes, complete records,
+  Cyprus and Northern Cyprus adding up to one island, paths being relative integers at the declared scale,
+  totals matching the sum of the parts, continent boxes inside the canvas, and the share order staying
+  alphabetical with later additions appended.
+- **share** — round trips at every level, URL safety, length, old `v1` links, and the promise that adding an
+  entity leaves older links decoding to the same countries.
+- **i18n** — every language carrying every string and no extras, placeholders like `{n}` surviving
+  translation, continent names, and locales `Intl` accepts.
+- **card** — each format at its declared size, no `NaN` in the output, level colours present, the legend only
+  appearing with more than one level, and text escaping.
+- **globe** — an outline for every drawable country, centroids on Earth, and polygons keeping their holes
+  nested (a hole read as its own polygon would paint the entire globe).
+
+The browser suite drives a real Chrome (downloaded by puppeteer, no system install) against a throwaway
+static server, each test in its own browser context so one test's `localStorage` cannot decide what the next
+one sees. It covers what a unit test cannot: clicking a country on the map and on the globe, the level brush,
+a shared link surviving a round trip through the address bar, the continent filter locking the rest of the
+map, multilingual search, the share sheet rendering all three cards, settings changing language, theme and
+colours, right-to-left layout, reload persistence, the two-step reset, and the service worker installing and
+serving the app **offline**.
+
+It has already earned its keep: it caught a real bug where a micro-state's finger-sized tap target covered
+its neighbours, so clicking Germany at world zoom selected Luxembourg.
 
 ## Data sources
 

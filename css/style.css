@@ -649,6 +649,7 @@ img.flag { width: 20px; height: 14px; object-fit: cover; border-radius: 2px; }
   .tip { display: none; }
   /* stop the hint before the view switch in the same corner */
   .hint { bottom: auto; top: 10px; left: 10px; right: 112px; text-align: left; }
+  [dir="rtl"] .hint { left: 112px; right: 10px; text-align: right; }
 }
 
 /* ---------- share sheet ---------- */
@@ -754,4 +755,27 @@ img.flag { width: 20px; height: 14px; object-fit: cover; border-radius: 2px; }
 @media (max-width: 900px) {
   /* stays top-right like on the desktop — moving it around made it hard to find */
   .vbtn { width: 40px; height: 38px; }
+}
+
+/* ---------- right-to-left ---------- */
+/* Flex and grid mirror themselves; what needs saying out loud is the handful of
+   absolutely positioned overlays and the few places that lean on left/right. */
+[dir="rtl"] .search svg { left: auto; right: 10px; }
+[dir="rtl"] .search input { padding: 8px 32px 8px 10px; }
+[dir="rtl"] .zoomctl { right: auto; left: 10px; }
+[dir="rtl"] .viewswitch { right: auto; left: 10px; }
+/* only where the hint keeps its bottom corner; the touch layout above places it
+   itself, and this block comes later in the file so it would win otherwise */
+@media (hover: hover) {
+  [dir="rtl"] .hint { left: 12px; right: auto; }
+}
+[dir="rtl"] .row .nm,
+[dir="rtl"] .lvchip b,
+[dir="rtl"] .colorrow b { text-align: right; }
+[dir="rtl"] .tip img.flag, [dir="rtl"] .flash img.flag { margin-right: 0; margin-left: 6px; }
+[dir="rtl"] .panel-body { margin-right: 0; margin-left: -6px; padding-right: 0; padding-left: 6px; }
+@media (max-width: 900px) {
+  /* the view switch and zoom buttons mirror to the left with everything else,
+     so the hint keeps clear of the left corner instead of the right one */
+  [dir="rtl"] .hint { left: 112px; right: 10px; text-align: right; }
 }

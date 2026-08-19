@@ -2,16 +2,17 @@
    The shell and the flat map are precached so the app opens offline; the globe
    bundle is big and optional, so it is only cached once someone actually loads it.
    Bump CACHE when deploying: the new worker drops every older cache on activate. */
-const CACHE = 'earthvisited-v7';
+const CACHE = 'earthvisited-v10';
 
 const SHELL = [
   './',
   'index.html',
-  'css/style.css?v=7',
-  'js/i18n.js?v=7',
-  'js/data.js?v=7',
-  'js/card.js?v=7',
-  'js/app.js?v=7',
+  'css/style.css?v=10',
+  'js/i18n.js?v=10',
+  'js/share.js?v=10',
+  'js/data.js?v=10',
+  'js/card.js?v=10',
+  'js/app.js?v=10',
   'assets/logo.svg',
   'assets/favicon.svg',
   'assets/flags/xn.svg',
