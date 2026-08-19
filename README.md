@@ -51,6 +51,18 @@ Inspired by [turkeyvisited](https://ozanyerli.github.io/turkeyvisited/), but for
   the trip), and older `#v1=` links still open, importing everything as *visited*.
   Selections also persist in `localStorage`. A static `og.png` gives the link a proper preview card.
 
+## Installable and offline
+
+`manifest.json` plus `sw.js` make the page installable: add it to a phone's home screen and it opens
+standalone and works with no connection. The service worker precaches the shell and the flat map
+(≈460 KB, ~150 KB over the wire) on the first visit and serves it cache-first afterwards; HTML is
+network-first so a deploy shows up right away. The globe bundle is deliberately left out of the precache and
+only cached once someone loads it.
+
+Assets carry a `?v=N` stamp and the cache is named after the same number — bump both in `index.html`,
+`js/app.js` (`ASSET_V`) and `sw.js` (`CACHE`) when deploying, so a cached stylesheet or dataset can never
+pair with a newer script.
+
 ## Running it
 
 Any static server works, e.g.:
@@ -86,7 +98,10 @@ js/vendor/          d3-geo build plus the three d3-array helpers it needs
 js/i18n.js          interface strings for the eight languages
 js/card.js          share-card renderer (SVG, one layout per format)
 js/app.js           map rendering, selection, zoom/pan, i18n, share sheet
-og.png              static link-preview image (regenerate with tools/gen-og.md steps)
+og.png              static link-preview image
+manifest.json       PWA manifest
+sw.js               service worker: precaches the shell, caches the globe on demand
+assets/icons/       app icons (192, 512, maskable, apple-touch)
 tools/gen.mjs       regenerates js/data.js
 tools/fetch-population.mjs   refreshes tools/population.json from the World Bank
 ```
@@ -107,8 +122,9 @@ the World Bank does not track — Taiwan, Kosovo, Vatican City, small territorie
 `POP_EXTRA` table in `gen.mjs`.
 
 It projects Natural Earth 1:50m country polygons with `d3-geo`'s Natural Earth projection into a
-1000 × 520 viewBox, simplifies them (topojson weight `0.0004`, then a 0.2 px screen-space filter — roughly
-719 KB of path data, ~232 KB gzipped), and joins each shape to its ISO alpha-2 code, English/Turkish name,
+1000 × 520 viewBox, simplifies them (topojson weight `0.0004`, then a 0.2 px screen-space filter) and writes them as relative
+integer path commands at 10× scale — same 0.1 px precision in roughly half the bytes (354 KB, ~114 KB
+gzipped), drawn inside a `scale(0.1)` group so every other coordinate stays in 1000 × 520 space, and joins each shape to its ISO alpha-2 code, English/Turkish name,
 region, flag and UN-membership flag. It also emits a zoom box per continent, percentile-trimmed so that
 outliers (Russia counts as Europe, Hawaii as Oceania) do not stretch a continent across half the map.
 

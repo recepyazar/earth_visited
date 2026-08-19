@@ -55,13 +55,25 @@ window.EarthCard = (() => {
       // element would move its clipping rectangle along with the drawing.
       `<g clip-path="url(#cardMap)"><g transform="translate(${r(x - CROP[0] * k)} ${r(y - CROP[1] * k)}) scale(${r(k)})">`,
     ];
-    for (const d of o.world.decor) out.push(`<path d="${d}" fill="${c.land}" opacity=".5"/>`);
-    const stroke = ` stroke="${c.ocean}" stroke-width="${r(0.5 / k)}"`;
     const levelColor = new Map(o.levels.map((l) => [l.id, l.color]));
+    const ps = o.world.ps || 1;
+
+    // paths come baked at ps x this space, so they get their own scaled group;
+    // the stroke width has to be pre-multiplied to stay a hairline after scaling
+    const pathStroke = ` stroke="${c.ocean}" stroke-width="${r((0.5 * ps) / k)}"`;
+    out.push(`<g transform="scale(${r(1 / ps)})">`);
+    for (const d of o.world.decor) out.push(`<path d="${d}" fill="${c.land}" opacity=".5"/>`);
     for (const f of o.world.f) {
+      if (!f.d) continue;
+      out.push(`<path d="${f.d}" fill="${levelColor.get(o.marks.get(f.c)) || c.land}"${pathStroke}/>`);
+    }
+    out.push('</g>');
+
+    const dotStroke = ` stroke="${c.ocean}" stroke-width="${r(0.5 / k)}"`;
+    for (const f of o.world.f) {
+      if (f.a >= 6) continue;
       const fill = levelColor.get(o.marks.get(f.c)) || c.land;
-      if (f.d) out.push(`<path d="${f.d}" fill="${fill}"${stroke}/>`);
-      if (f.a < 6) out.push(`<circle cx="${f.x}" cy="${f.y}" r="${r(Math.max(2.6, 3.6 / k))}" fill="${fill}"${stroke}/>`);
+      out.push(`<circle cx="${f.x}" cy="${f.y}" r="${r(Math.max(2.6, 3.6 / k))}" fill="${fill}"${dotStroke}/>`);
     }
     out.push('</g></g>');
     return { svg: out.join(''), h };

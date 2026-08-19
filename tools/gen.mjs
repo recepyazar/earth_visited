@@ -24,46 +24,68 @@ const OUT = fileURLToPath(new URL('../js/data.js', import.meta.url));
 const OUT_GLOBE = fileURLToPath(new URL('../js/globe-data.js', import.meta.url));
 const GLOBE_SIMPLIFY = 0.005; // the globe is drawn small, so it can be coarser than the map
 
-/* ---------- path serializer: rounds to 0.1px and drops near-duplicate points ---------- */
-function makeCtx(tol, dec = 1) {
-  const k = 10 ** dec;
-  const r = (v) => Math.round(v * k) / k;
-  let out = [];
+/* ---------- path serializer ----------
+   Paths are emitted at 10x scale as integers with relative commands: "M1234,567l12-4 8 3…".
+   Same 0.1px precision as before, roughly half the bytes, and the browser still
+   parses it natively — app.js and the card renderer draw them inside a
+   scale(1/PATH_SCALE) group so every other coordinate stays in 1000x520 space. */
+const PATH_SCALE = 10;
+
+function makeCtx(tol) {
+  const t = tol * PATH_SCALE;
+  let out = '';
   let first = null;
   let prev = null;
   let pending = null;
+
+  // "12-4" needs no separator, "12,4" does — append accordingly
+  const put = (a, b) => {
+    if (out && /[\d.]$/.test(out) && a >= 0) out += ',';
+    out += a;
+    if (b >= 0) out += ',';
+    out += b;
+  };
+
   const flush = () => {
     if (pending) {
-      out.push(`L${pending[0]},${pending[1]}`);
+      put(pending[0] - prev[0], pending[1] - prev[1]);
       prev = pending;
       pending = null;
     }
   };
+
   return {
     moveTo(x, y) {
       flush();
-      first = prev = [r(x), r(y)];
-      out.push(`M${first[0]},${first[1]}`);
+      const p = [Math.round(x * PATH_SCALE), Math.round(y * PATH_SCALE)];
+      if (!prev) {
+        out += `M${p[0]},${p[1]}`;
+      } else {
+        out += 'm';
+        put(p[0] - prev[0], p[1] - prev[1]);
+      }
+      first = prev = p;
+      out += 'l';
     },
     lineTo(x, y) {
-      const p = [r(x), r(y)];
-      if (Math.abs(p[0] - prev[0]) < tol && Math.abs(p[1] - prev[1]) < tol) {
-        pending = p; // keep it around in case it is the ring's last point
+      const p = [Math.round(x * PATH_SCALE), Math.round(y * PATH_SCALE)];
+      if (Math.abs(p[0] - prev[0]) < t && Math.abs(p[1] - prev[1]) < t) {
+        pending = p; // might still be the ring's last point
         return;
       }
       pending = null;
-      out.push(`L${p[0]},${p[1]}`);
+      put(p[0] - prev[0], p[1] - prev[1]);
       prev = p;
     },
     closePath() {
       pending = null;
-      out.push('Z');
-      prev = first;
+      out += 'Z';
+      prev = first; // Z returns the pen to the subpath start
     },
     arc() {},
     result() {
-      const s = out.join('');
-      out = [];
+      const s = out.replace(/l(?=[Zm]|$)/g, ''); // drop an "l" with no points after it
+      out = '';
       first = prev = pending = null;
       return s;
     },
@@ -352,7 +374,7 @@ const js =
   `// GENERATED FILE — do not edit. Run \`npm run build\` in tools/ to regenerate.\n` +
   `// Natural Earth 1:50m via world-atlas, metadata via world-countries.\n` +
   `// ${feats.length} selectable entities, of which ${sovereign.length} sovereign countries.\n` +
-  `window.WORLD = ${JSON.stringify({ w: WIDTH, h: HEIGHT, regions, totals, order, decor, f: feats })};\n`;
+  `window.WORLD = ${JSON.stringify({ w: WIDTH, h: HEIGHT, ps: PATH_SCALE, regions, totals, order, decor, f: feats })};\n`;
 writeFileSync(OUT, js);
 for (const r of REGIONS) console.log(`region ${r.padEnd(9)} [${regions[r].join(', ')}]`);
 

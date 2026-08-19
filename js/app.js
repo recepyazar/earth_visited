@@ -16,6 +16,9 @@
 
   const W = WORLD.w;
   const H = WORLD.h;
+  // paths are baked at WORLD.ps times this coordinate space, as integers, and drawn
+  // inside a group that scales them back down — everything else stays in W x H units
+  const PATH_SCALE = WORLD.ps || 1;
   const FEATURES = WORLD.f;
   const byCode = new Map(FEATURES.map((f) => [f.c, f]));
   // s: 1 UN member (or observer state), 3 counted as a country anyway, 2 territory
@@ -216,6 +219,8 @@
       decorG.appendChild(p);
     }
 
+    const shapesG = document.createElementNS(SVG_NS, 'g');
+    shapesG.setAttribute('transform', `scale(${1 / PATH_SCALE})`);
     const landG = document.createElementNS(SVG_NS, 'g');
     const dotG = document.createElementNS(SVG_NS, 'g');
     dotG.setAttribute('id', 'dots');
@@ -253,7 +258,8 @@
       els[f.c] = Object.assign(els[f.c] || {}, { shape });
     }
 
-    scene.append(decorG, landG, dotG, hitG);
+    shapesG.append(decorG, landG);
+    scene.append(shapesG, dotG, hitG);
     map.appendChild(scene);
     map.addEventListener('pointermove', onMapHover);
     map.addEventListener('pointerleave', hideTip);
@@ -684,7 +690,7 @@
   /* ---------------- globe ---------------- */
   // ?v= keeps a cached stylesheet from ever pairing with a newer script; bump it
   // in index.html and here together when deploying
-  const ASSET_V = 'v=6';
+  const ASSET_V = 'v=7';
   const GLOBE_FILES = [
     'js/vendor/d3-array-shim.js',
     'js/vendor/d3-geo.min.js',
@@ -1212,4 +1218,9 @@
   }
 
   document.addEventListener('DOMContentLoaded', init);
+
+  // offline support; file:// and other unsupported contexts just skip it
+  if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+    addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+  }
 })();
