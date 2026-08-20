@@ -9,9 +9,11 @@
     "test:browser": "node --test \"test/browser/*.test.mjs\"",
     "test:all": "npm test && npm run test:browser",
     "build:admin1": "node gen-admin1.mjs",
-    "build:cities": "node gen-cities.mjs"
+    "build:cities": "node gen-cities.mjs",
+    "build:cityareas": "node gen-cityareas.mjs"
   },
   "dependencies": {
+    "d3-delaunay": "^6.0.4",
     "d3-geo": "^3.1.1",
     "topojson-client": "^3.1.0",
     "topojson-simplify": "^3.0.3",

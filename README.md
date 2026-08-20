@@ -36,6 +36,11 @@ Inspired by [turkeyvisited](https://ozanyerli.github.io/turkeyvisited/), but for
   50 KB). The detail layer is 1:10m, so an open country zooms far deeper than the world map's 24x, the reset
   button re-fits the country rather than jumping back out, and the country's own fill steps aside while you
   are inside it.
+- **The city view** — the third button on the map splits every country among its own cities: each spot on
+  land belongs to the city nearest to it, so the world reads as a mosaic of cities rather than of countries.
+  Press anywhere and the city whose patch you touched is marked; a country with nothing marked stays
+  uncoloured, so a single trip never claims a whole country. The mosaic (6,239 areas) is fetched only when
+  you open this view.
 - **Cities** — type a city into the same search box and it appears under the countries, `İzmir, Türkiye`.
   Marking one paints a dot on the world map instead of colouring the whole country, so a single trip to Rome
   does not claim all of Italy. Cities answer to their name in your language — “Roma”, “Viyana”, “Москва” —
@@ -124,10 +129,12 @@ sw.js               service worker: precaches the shell, caches the globe on dem
 assets/icons/       app icons (192, 512, maskable, apple-touch)
 js/admin1/          GENERATED — one file per country with a province layer, plus a tiny index
 js/cities.js        GENERATED — city index, loaded the first time you search a city
+js/cityareas.js     GENERATED — the city view's mosaic, loaded when that view opens
 js/cities/<lang>.js GENERATED — city names in that language, only the one in use is fetched
 tools/gen.mjs       regenerates js/data.js
 tools/gen-admin1.mjs regenerates js/admin1/ from Natural Earth 1:10m admin-1
 tools/gen-cities.mjs regenerates js/cities.js from GeoNames cities15000
+tools/gen-cityareas.mjs regenerates js/cityareas.js — one Voronoi cell per city
 tools/fetch-population.mjs   refreshes tools/population.json from the World Bank
 ```
 
@@ -204,7 +211,29 @@ names and 4 KB gzipped, Russian 3,941 and 26 KB. All twelve in one file would ha
 app fetches only the language in use — and still searches the original name, so “Rome” and “Roma” both find
 the same city.
 
-Cities are not a mode: they are the same list and the same brush as everything else. Searching for one loads
+## The city view
+
+```bash
+cd tools
+npm run build:cityareas         # after build:cities; needs js/data.js too
+```
+
+No free dataset draws the world's cities as areas, so the mosaic is a Voronoi tessellation: within each
+country, every spot belongs to the city nearest to it. Tessellating per country keeps a Greek city from
+claiming a piece of Türkiye, and the cells are cut to the country's own outline in the browser with the same
+clip trick the province layer uses — one clip path and one group per country, one path holding all of that
+country's cell edges. Only the cities you have marked get a filled cell, which is what keeps 6,239 areas from
+turning into 6,239 DOM nodes.
+
+GeoNames counts Bağcılar, Fatih and Esenler as cities in their own right, which would leave Istanbul with a
+sliver while Trabzon got a province. So a city absorbs its neighbours within a reach that grows with its
+population — 8 km for a town, 30 km for Istanbul — and they share one cell: marking any of them fills it.
+That also sidesteps a hard failure, since a Voronoi silently drops sites that land on the very same point.
+
+A press anywhere on land finds the nearest city of the country underneath, so a click never jumps across a
+border and no hit areas are needed at all.
+
+Cities are also part of the ordinary map: they are the same list and the same brush as everything else. Searching for one loads
 the index, marking one draws a dot into `#citymarks` — only marked cities are ever in the DOM, which is why
 the layer costs nothing at world zoom — and the dot is sized in screen pixels so it stays a dot as you zoom.
 A city never marks its country: they are counted separately, and the country under a marked city stays

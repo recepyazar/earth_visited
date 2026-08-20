@@ -82,7 +82,10 @@
   let cardBlob = null; // PNG for the size currently previewed
 
   const $ = (id) => document.getElementById(id);
-  let worldSubtitle = null; // the score line's world markup, restored on the way back
+  // The score line's world markup, kept from before anything can overwrite it: a
+  // country's provinces and the city view both write plain text over it, and the
+  // spans inside (the city counter) have to come back intact.
+  let worldSubtitle = null;
 
   // Most flags are emoji; entities without one (Northern Cyprus) ship an SVG.
   function flagNode(f, cls = 'flag') {
@@ -205,12 +208,12 @@
     lang = I18N.pick(systemLangs, saved?.lang);
     theme = ['dark', 'light', 'auto'].includes(saved?.theme) ? saved.theme : 'auto';
     colors = saved && typeof saved.colors === 'object' && saved.colors ? { ...saved.colors } : {};
-    mode = saved?.view === 'globe' ? 'globe' : 'map';
+    mode = saved?.view === 'globe' || saved?.view === 'cities' ? saved.view : 'map';
     // ?lang=de / ?theme=light let a shared link pick how it opens
     const q = new URLSearchParams(location.search);
     if (known(q.get('lang'))) lang = q.get('lang');
     if (['dark', 'light', 'auto'].includes(q.get('theme'))) theme = q.get('theme');
-    if (q.get('view') === 'globe' || q.get('view') === 'map') mode = q.get('view');
+    if (['globe', 'map', 'cities'].includes(q.get('view'))) mode = q.get('view');
   }
 
   /* ---------------- map ---------------- */
@@ -376,8 +379,11 @@
       // Remember what was under the finger/cursor: the toggle happens on pointerup,
       // because capturing the pointer for panning would retarget a later click event.
       pressCity = pointers.size === 1 ? (e.target.dataset && +e.target.dataset.city) || null : null;
+      // in the city view every spot on land belongs to a city, so a press anywhere
+      // picks the one whose area it fell in
+      if (!pressCity && mode === 'cities' && pointers.size === 1) pressCity = cityAt(e);
       pressSub = pointers.size === 1 ? (e.target.dataset && e.target.dataset.sub) || null : null;
-      pressCode = pointers.size === 1 && !pressSub ? codeAt(e.target, e.clientX, e.clientY) : null;
+      pressCode = pointers.size === 1 && !pressSub && !(mode === 'cities') ? codeAt(e.target, e.clientX, e.clientY) : null;
       previewed = false;
       clearTimeout(pressTimer);
       if (pressCode || pressSub || pressCity) {
@@ -455,7 +461,7 @@
 
   /* ---------------- interaction ---------------- */
   function onMapHover(e) {
-    const cityId = e.target.dataset && e.target.dataset.city;
+    const cityId = (e.target.dataset && e.target.dataset.city) || (mode === 'cities' ? cityAt(e) : null);
     if (cityId && cityData) {
       const city = cityData.byId.get(+cityId);
       if (!city) return hideTip();
@@ -560,8 +566,22 @@
   }
 
   /* ---------------- list ---------------- */
+  // A tap fires the enter event and never the leave one, so the outline used to
+  // stay on the map for good — a green border stuck around whatever you last
+  // touched. Only a real cursor gets a highlight, and a stale one is cleared
+  // whenever the list is rebuilt.
+  function clearHighlights() {
+    for (const el of map.querySelectorAll('.hl')) el.classList.remove('hl');
+  }
+  function highlight(targets, on, e) {
+    if (on && e && e.pointerType && e.pointerType !== 'mouse') return;
+    for (const el of targets) if (el) el.classList.toggle('hl', on);
+  }
+
   function buildList() {
+    clearHighlights();
     if (detail) return buildDetailList();
+    if (mode === 'cities') return buildCityList();
     const frag = document.createDocumentFragment();
     const sorted = [...FEATURES].sort((a, b) => nameOf(a).localeCompare(nameOf(b), lang));
     for (const f of sorted) {
@@ -585,8 +605,8 @@
         }
         toggle(f.c);
       };
-      row.onmouseenter = () => shapesOf(f.c).forEach((s) => s.classList.add('hl'));
-      row.onmouseleave = () => shapesOf(f.c).forEach((s) => s.classList.remove('hl'));
+      row.onpointerenter = (e) => highlight(shapesOf(f.c), true, e);
+      row.onpointerleave = () => highlight(shapesOf(f.c), false);
       els[f.c] = Object.assign(els[f.c] || {}, { row });
       paintRow(f.c);
       frag.appendChild(row);
@@ -602,7 +622,51 @@
   }
 
   // the same row UI, listing the open country's provinces instead of the world
+  // In the city view the list is about cities: the ones you have marked, and
+  // whatever the search box turns up beneath them.
+  function buildCityList() {
+    const frag = document.createDocumentFragment();
+    const needle = fold($('search').value.trim());
+    const marked = cityData
+      ? [...cityMarks.keys()].map((id) => cityData.byId.get(id)).filter(Boolean)
+      : [];
+    marked.sort((a, b) => cityName(a).localeCompare(cityName(b), lang));
+    let shown = 0;
+    for (const city of marked) {
+      const country = byCode.get(city.c);
+      const label = fold(`${cityName(city)} ${city.n} ${country ? nameOf(country) : ''}`);
+      if (needle && !label.includes(needle)) continue;
+      frag.appendChild(cityRow(city));
+      shown++;
+    }
+    list.replaceChildren(frag);
+    showEmpty(!shown);
+    showCityMatches(needle);
+  }
+
+  function cityRow(city, found) {
+    const country = byCode.get(city.c);
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = found ? 'row city-row found' : 'row city-row';
+    row.dataset.code = `c${city.i}`;
+    const lv = cityMarks.get(city.i) || 0;
+    row.classList.toggle('on', lv > 0);
+    if (lv) row.classList.add(`lv${lv}`);
+    row.setAttribute('aria-pressed', String(lv > 0));
+    row.innerHTML = '<span class="box"></span><span class="flag"></span><span class="nm"></span><span class="tag pop"></span>';
+    row.querySelector('.flag').replaceWith(country ? flagNode(country) : document.createElement('span'));
+    row.querySelector('.nm').textContent = `${cityName(city)}${country ? `, ${nameOf(country)}` : ''}`;
+    row.querySelector('.pop').textContent = compact(city.p * 1000);
+    row.onclick = () => toggleCity(city.i);
+    row.onpointerenter = (e) => highlight([cellGroup && cellGroup.querySelector(`[data-city="${city.i}"]`)], true, e);
+    row.onpointerleave = () => highlight([cellGroup && cellGroup.querySelector(`[data-city="${city.i}"]`)], false);
+    els[`c${city.i}`] = Object.assign(els[`c${city.i}`] || {}, { row });
+    return row;
+  }
+
   function buildDetailList() {
+    clearHighlights();
     const frag = document.createDocumentFragment();
     const sorted = [...detail.units].sort((a, b) => subNameOf(a).localeCompare(subNameOf(b), lang));
     for (const unit of sorted) {
@@ -613,8 +677,8 @@
       row.innerHTML = '<span class="box"></span><span class="nm"></span>';
       row.querySelector('.nm').textContent = subNameOf(unit);
       row.onclick = () => toggleSub(unit.c);
-      row.onmouseenter = () => detail.byId.get(unit.c)?.path.classList.add('hl');
-      row.onmouseleave = () => detail.byId.get(unit.c)?.path.classList.remove('hl');
+      row.onpointerenter = (e) => highlight([detail.byId.get(unit.c)?.path], true, e);
+      row.onpointerleave = () => highlight([detail.byId.get(unit.c)?.path], false);
       els[unit.c] = Object.assign(els[unit.c] || {}, { row });
       frag.appendChild(row);
       paintSub(unit.c);
@@ -650,6 +714,8 @@
     const needle = fold(q.trim());
     let onShown = 0;
     let offShown = 0;
+    // the city view's list is cities: marked ones first, search results under them
+    if (mode === 'cities') return buildCityList();
     if (detail) {
       for (const unit of detail.units) {
         const row = els[unit.c] && els[unit.c].row;
@@ -681,8 +747,11 @@
   // Cities live in the same list as the countries, but only while searching: a
   // country is a thing you scroll to, a city is a thing you look up.
   async function showCityMatches(needle) {
-    for (const row of list.querySelectorAll('.row.city-row')) row.remove();
+    // the search owns the heading and its own results — `.found` keeps it from
+    // sweeping away the marked cities the city view lists
+    for (const row of list.querySelectorAll('.lhead.city-row, .row.city-row.found')) row.remove();
     if (detail || needle.length < 2) return;
+    if (mode === 'globe') return;
     const data = await ensureCities();
     await ensureCityNames(lang); // "Roma" and "Rome" both have to work
     if (!data || fold($('search').value.trim()) !== needle) return; // the query moved on
@@ -710,21 +779,8 @@
     const frag = document.createDocumentFragment();
     frag.appendChild(head);
     for (const city of top) {
-      const country = byCode.get(city.c);
-      const row = document.createElement('button');
-      row.type = 'button';
-      row.className = 'row city-row';
-      row.dataset.code = `c${city.i}`;
-      const lv = cityMarks.get(city.i) || 0;
-      row.classList.toggle('on', lv > 0);
-      if (lv) row.classList.add(`lv${lv}`);
-      row.innerHTML = '<span class="box"></span><span class="flag"></span><span class="nm"></span><span class="tag pop"></span>';
-      row.querySelector('.flag').replaceWith(country ? flagNode(country) : document.createElement('span'));
-      row.querySelector('.nm').textContent = `${cityName(city)}${country ? `, ${nameOf(country)}` : ''}`;
-      row.querySelector('.pop').textContent = compact(city.p * 1000);
-      row.onclick = () => toggleCity(city.i);
-      els[`c${city.i}`] = Object.assign(els[`c${city.i}`] || {}, { row });
-      frag.appendChild(row);
+      if (mode === 'cities' && cityMarks.has(city.i)) continue; // already listed above
+      frag.appendChild(cityRow(city, true));
     }
     list.appendChild(frag);
     showEmpty(false);
@@ -801,6 +857,14 @@
   }
 
   /* ---------------- score ---------------- */
+  // the markup is the English original, so the labels inside it are translated again
+  function restoreWorldSubtitle() {
+    if (!worldSubtitle) return;
+    const sub = $('scoreSub');
+    sub.innerHTML = worldSubtitle;
+    for (const el of sub.querySelectorAll('[data-i18n]')) el.textContent = t(el.dataset.i18n);
+  }
+
   function updateScore() {
     if (detail) {
       const done = detailCount();
@@ -820,6 +884,22 @@
       renderBrush(perLevel);
       return;
     }
+    if (mode === 'cities') {
+      // the score is about cities here, and the brush counts them too
+      const done = cityCount();
+      const total = cityData ? cityData.c.length : done;
+      $('count').textContent = done;
+      $('total').textContent = `/ ${total}`;
+      $('pct').textContent = withPct((done / total) * 100);
+      $('barfill').style.width = `${Math.min(100, (done / total) * 100)}%`;
+      $('scoreSub').textContent = `${t('cities')} · ${t('citiesIn').replace('{n}', cityCountries())}`;
+      const perLevel = { 1: 0, 2: 0, 3: 0, 4: 0 };
+      for (const lv of cityMarks.values()) perLevel[lv]++;
+      lastCounts = perLevel;
+      renderBrush(perLevel);
+      return;
+    }
+    restoreWorldSubtitle(); // the city view and the province view write over it
     const s = stats();
     $('count').textContent = s.sov;
     $('cityCount').textContent = cityCount();
@@ -919,9 +999,9 @@
 
   async function openDetail(code) {
     if (!hasDetail(code)) return;
-    // the globe has no province layer, so opening one takes you back to the flat map
-    // rather than leaving the control dead
-    if (mode === 'globe') await setView('map');
+    // neither the globe nor the city mosaic has a province layer, so opening one
+    // takes you back to the flat map rather than leaving the control dead
+    if (mode !== 'map') await setView('map');
     const data = await loadDetail(code);
     if (!data) return toast(t('copyFail'));
 
@@ -964,7 +1044,6 @@
     }
     scene.appendChild(group);
 
-    if (!worldSubtitle) worldSubtitle = $('scoreSub').innerHTML;
     $('search').value = ''; // a country search would hide every province
     $('search').placeholder = t('searchSub');
     detail = { code, units: data.u, byId, box: data.box, group };
@@ -985,7 +1064,7 @@
     detail = null;
     $('search').value = '';
     $('search').placeholder = t('search');
-    if (worldSubtitle) $('scoreSub').innerHTML = worldSubtitle;
+    restoreWorldSubtitle();
     document.body.classList.remove('in-detail');
     $('crumbs').hidden = true;
     applyLang(); // the restored subtitle needs its translations back
@@ -1119,6 +1198,7 @@
     for (const [id, lv] of list) cityMarks.set(id, lv);
     save();
     drawCities();
+    paintCells();
     updateScore();
   }
 
@@ -1145,6 +1225,141 @@
     sizeMarkers();
   }
 
+  /* ---------------- the city view ---------------- */
+  // No dataset draws the world's cities as areas, so every spot on land belongs to
+  // the city nearest to it, tessellated per country at build time (js/cityareas.js)
+  // and cut to each country's own outline here. A country whose cities you have not
+  // marked shows no colour at all — the map only fills in where you have been.
+  let areaData = null;
+  let areaLoading = null;
+  let cellGroup = null;
+  const cellOf = new Map(); // geonameid -> cell path data
+
+  function ensureCityAreas() {
+    if (areaData) return Promise.resolve(areaData);
+    if (!areaLoading) {
+      areaLoading = ensureCities()
+        .then((cities) => (cities ? loadScript(`js/cityareas.js?${ASSET_V}`) : null))
+        .then(() => {
+          areaData = window.CITY_AREAS || null;
+          if (areaData) {
+            for (const list of Object.values(areaData.a)) {
+              for (const [index, d] of list) {
+                const city = cityData.c[index];
+                if (city) cellOf.set(city.i, d);
+              }
+            }
+          }
+          return areaData;
+        })
+        .catch(() => {
+          areaLoading = null;
+          return null;
+        });
+    }
+    return areaLoading;
+  }
+
+  // one group per country, clipped to that country's own shape: a Voronoi cell runs
+  // past the coast and over the border, and the clip is what makes it a country's
+  // city rather than a wedge of the sea
+  function buildMosaic() {
+    if (!areaData || cellGroup) return;
+    let defs = map.querySelector('defs#celldefs');
+    if (!defs) {
+      defs = document.createElementNS(SVG_NS, 'defs');
+      defs.id = 'celldefs';
+      map.insertBefore(defs, map.firstChild);
+    }
+    cellGroup = document.createElementNS(SVG_NS, 'g');
+    cellGroup.setAttribute('id', 'citycells');
+
+    const frag = document.createDocumentFragment();
+    const clips = document.createDocumentFragment();
+    for (const [code, list] of Object.entries(areaData.a)) {
+      const feature = byCode.get(code);
+      if (!feature || !feature.d) continue;
+
+      const clip = document.createElementNS(SVG_NS, 'clipPath');
+      clip.id = `cellclip-${code}`;
+      const shape = document.createElementNS(SVG_NS, 'path');
+      shape.setAttribute('transform', `scale(${1 / PATH_SCALE})`);
+      shape.setAttribute('d', feature.d);
+      clip.appendChild(shape);
+      clips.appendChild(clip);
+
+      const outer = document.createElementNS(SVG_NS, 'g');
+      outer.setAttribute('clip-path', `url(#cellclip-${code})`);
+      outer.dataset.cells = code;
+      const inner = document.createElementNS(SVG_NS, 'g');
+      inner.setAttribute('transform', `scale(${1 / areaData.ps})`);
+      // every cell edge in one path: the outlines are what makes a country read as
+      // a mosaic of cities, and 6,000 separate nodes is what made this lag before
+      const mesh = document.createElementNS(SVG_NS, 'path');
+      mesh.setAttribute('class', 'cellmesh');
+      mesh.setAttribute('d', list.map(([, d]) => d).join(''));
+      inner.appendChild(mesh);
+      outer.appendChild(inner);
+      frag.appendChild(outer);
+    }
+    defs.replaceChildren(clips);
+    cellGroup.appendChild(frag);
+    scene.insertBefore(cellGroup, scene.querySelector('#dots'));
+    paintCells();
+  }
+
+  // only marked cities get a filled cell, so the DOM stays small however long you play
+  function paintCells() {
+    if (!cellGroup || !cityData) return;
+    for (const group of cellGroup.children) {
+      const code = group.dataset.cells;
+      const inner = group.firstChild;
+      for (const el of [...inner.querySelectorAll('.cell')]) el.remove();
+      for (const [id, lv] of cityMarks) {
+        const city = cityData.byId.get(id);
+        if (!city || city.c !== code) continue;
+        const d = cellOf.get(id);
+        if (!d) continue;
+        const cell = document.createElementNS(SVG_NS, 'path');
+        cell.setAttribute('d', d);
+        cell.setAttribute('class', `cell on lv${lv}`);
+        cell.dataset.city = id;
+        inner.appendChild(cell);
+      }
+    }
+  }
+
+  // which city's area is under this event — the country beneath decides whose
+  // cities are candidates, so a click near a border cannot jump to the neighbour
+  function cityAt(e) {
+    if (!cityData) return null;
+    const code = codeAt(e.target, e.clientX, e.clientY);
+    if (!code) return null;
+    const at = svgPoint(e);
+    let best = null;
+    let bestD = Infinity;
+    for (const city of cityData.c) {
+      if (city.c !== code) continue;
+      const dx = city.x / cityData.scale - at.x;
+      const dy = city.y / cityData.scale - at.y;
+      const d = dx * dx + dy * dy;
+      if (d < bestD) {
+        bestD = d;
+        best = city.i;
+      }
+    }
+    return best;
+  }
+
+  const cityCountries = () => {
+    const codes = new Set();
+    if (cityData) for (const id of cityMarks.keys()) {
+      const city = cityData.byId.get(id);
+      if (city) codes.add(city.c);
+    }
+    return codes.size;
+  };
+
   async function toggleCity(id) {
     const data = await ensureCities();
     if (!data || !data.byId.has(id)) return;
@@ -1152,7 +1367,9 @@
     if (next) cityMarks.set(id, next);
     else cityMarks.delete(id);
     drawCities();
+    paintCells();
     flashCity(id, next);
+    if (mode === 'cities') buildList(); // the city view lists what you have marked
     const row = els[`c${id}`] && els[`c${id}`].row;
     if (row) {
       row.classList.toggle('on', next > 0);
@@ -1190,7 +1407,7 @@
   /* ---------------- globe ---------------- */
   // ?v= keeps a cached stylesheet from ever pairing with a newer script; bump it
   // in index.html and here together when deploying
-  const ASSET_V = 'v=13';
+  const ASSET_V = 'v=14';
   const GLOBE_FILES = [
     'js/vendor/d3-array-shim.js',
     'js/vendor/d3-geo.min.js',
@@ -1249,25 +1466,42 @@
 
   async function setView(next) {
     if (next === 'globe' && !(await ensureGlobe())) return;
+    if (next === 'cities') {
+      if (detail) closeDetail(); // a country's provinces and its cities are two subjects
+      toast(t('loadingCities'));
+      if (!(await ensureCityAreas())) return toast(t('copyFail'));
+      buildMosaic();
+    }
     mode = next;
     savePrefs();
     const onGlobe = mode === 'globe';
+    const onCities = mode === 'cities';
+    document.body.classList.toggle('in-cities', onCities);
+    if (cellGroup) cellGroup.style.display = onCities ? '' : 'none';
     // set display inline as well as the attribute: a stale cached stylesheet without
     // the [hidden] rules would otherwise leave the flat map showing under the globe
     $('map').hidden = onGlobe;
     $('map').style.display = onGlobe ? 'none' : '';
     $('globe').hidden = !onGlobe;
     $('globe').style.display = onGlobe ? '' : 'none';
-    $('viewMap').classList.toggle('on', !onGlobe);
+    $('viewMap').classList.toggle('on', !onGlobe && !onCities);
     $('viewGlobe').classList.toggle('on', onGlobe);
-    $('hint').textContent = onGlobe ? t('hintGlobe') : matchMedia('(hover: none)').matches ? t('hintTouch') : t('hint');
+    $('viewCities').classList.toggle('on', onCities);
+    $('hint').textContent = hintText();
     hideTip();
+    buildList();
+    updateScore();
     if (onGlobe) {
       if (!Globe.mounted) Globe.mount($('globe'), globeOptions());
       Globe.resize();
       if (activeRegion) Globe.spinTo(regionAnchor(activeRegion), 1.35);
     }
   }
+
+  const hintText = () =>
+    mode === 'globe' ? t('hintGlobe')
+      : mode === 'cities' ? t('hintCities')
+        : matchMedia('(hover: none)').matches ? t('hintTouch') : t('hint');
 
   // rough centre of a continent: the marked-or-not country closest to its box centre
   function regionAnchor(region) {
@@ -1532,7 +1766,7 @@
     if (detail) $('search').placeholder = t('searchSub');
     for (const el of document.querySelectorAll('[data-i18n-title]')) el.title = t(el.dataset.i18nTitle);
     if (resetArmed) disarmReset();
-    $('hint').textContent = mode === 'globe' ? t('hintGlobe') : matchMedia('(hover: none)').matches ? t('hintTouch') : t('hint');
+    $('hint').textContent = hintText();
     if (detail) $('crumbName').textContent = nameOf(byCode.get(detail.code));
     buildList();
     // the city rows went with the list; they come back in the new language
@@ -1644,6 +1878,7 @@
   }
 
   function init() {
+    worldSubtitle = $('scoreSub').innerHTML; // before any view rewrites it
     loadPrefs();
     load();
     applyTheme();
@@ -1667,7 +1902,8 @@
     });
     // two-step reset instead of a browser confirm(): the second tap does it
     $('resetBtn').onclick = () => {
-      if (detail ? !detailCount() : !marks.size && !subMarks.size && !cityMarks.size) return;
+      const nothing = detail ? !detailCount() : mode === 'cities' ? !cityMarks.size : !marks.size && !subMarks.size && !cityMarks.size;
+      if (nothing) return;
       if (!resetArmed) {
         resetArmed = true;
         $('resetBtn').textContent = t('resetAsk');
@@ -1681,11 +1917,19 @@
         // inside a country, Reset means "this country's provinces", not the world
         for (const unit of detail.units) subMarks.delete(unit.c);
         for (const id of detail.byId.keys()) paintSub(id);
+      } else if (mode === 'cities') {
+        // and in the city view it means the cities, not the countries
+        cityMarks.clear();
+        drawCities();
+        paintCells();
+        buildList();
       } else {
         const all = [...marks.keys()];
         marks.clear();
         subMarks.clear(); // otherwise provinces would linger, invisible, in the next link
         cityMarks.clear();
+        drawCities();
+        paintCells();
         all.forEach(paintShape);
         all.forEach(paintRow);
       }
@@ -1696,9 +1940,11 @@
     $('crumbBack').onclick = () => closeDetail();
     $('viewMap').onclick = () => setView('map');
     $('viewGlobe').onclick = () => setView('globe');
-    if (mode === 'globe') {
+    $('viewCities').onclick = () => setView(mode === 'cities' ? 'map' : 'cities');
+    if (mode !== 'map') {
+      const wanted = mode;
       mode = 'map'; // setView does the switching work, including the lazy load
-      setView('globe');
+      setView(wanted);
     }
     // the globe has no province layer yet, so opening one closes the other
     $('viewGlobe').addEventListener('click', () => detail && closeDetail());

@@ -884,6 +884,42 @@ body.in-detail #regionBlock { display: none; } /* filtering continents inside a 
 .city.lv2, .city.lv2:hover { fill: var(--lv2); }
 .city.lv3, .city.lv3:hover { fill: var(--lv3); }
 .city.lv4, .city.lv4:hover { fill: var(--lv4); }
+/* ---- the city view: every country split among its own cities ---- */
+#citycells { pointer-events: none; }
+.cellmesh {
+  fill: none;
+  stroke: var(--border);
+  /* the cells live inside a scale(1/10) group and the map itself zooms, so the
+     mosaic is drawn in screen pixels: a hairline at every zoom level */
+  vector-effect: non-scaling-stroke;
+  stroke-width: .7;
+  opacity: .5;
+}
+.cell {
+  stroke: var(--border-on);
+  vector-effect: non-scaling-stroke;
+  stroke-width: .8;
+}
+.cell.lv1 { fill: var(--lv1); }
+.cell.lv2 { fill: var(--lv2); }
+.cell.lv3 { fill: var(--lv3); }
+.cell.lv4 { fill: var(--lv4); }
+.cell.hl { stroke: var(--accent); stroke-width: 2; }
+/* the countries themselves step back: in this view the colour belongs to cities,
+   and a country you have been to must not read as "all of it visited" */
+body.in-cities .land,
+body.in-cities .land.on,
+body.in-cities .land.lv1, body.in-cities .land.lv2,
+body.in-cities .land.lv3, body.in-cities .land.lv4 {
+  fill: var(--land);
+  stroke: var(--border);
+}
+body.in-cities .land.dim { opacity: 1; }
+body.in-cities .dot, body.in-cities #hits { display: none; }
+body.in-cities #regionBlock,
+body.in-cities .tiles,
+body.in-cities .divider { display: none; } /* land area and continents are a country thing */
+
 /* only the cities you have marked are drawn, so they sit on top of everything */
 #citymarks { pointer-events: bounding-box; }
 .city { stroke-width: 1.5; }

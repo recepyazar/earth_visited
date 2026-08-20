@@ -49,7 +49,10 @@ const open = async (query = '') => {
   page.ctx = context;
   await page.setViewport({ width: 1200, height: 900 });
   const errors = [];
-  page.on('pageerror', (e) => errors.push(String(e)));
+  page.on('pageerror', (e) => {
+    errors.push(String(e));
+    if (process.env.DEBUG_ERRORS) console.error('[page error]', e.stack || e);
+  });
   page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
   await page.goto(`${base}/${query}`, { waitUntil: 'networkidle0' });
   await page.waitForSelector('path.pickable');
@@ -560,6 +563,76 @@ test('a city survives a reload and clears with the map', async () => {
   assert.equal(await page.$eval('#cityStat', (e) => e.hidden), true, 'and the score line drops the counter');
   assert.deepEqual(page.errors, []);
   await close(page);
+});
+
+test('the city view splits every country among its cities', async () => {
+  const page = await open('?lang=tr');
+  const fetched = () => page.evaluate(() =>
+    performance.getEntriesByType('resource').filter((r) => /cityareas|cities\.js/.test(r.name)).length);
+  assert.equal(await fetched(), 0, 'the mosaic is not part of the first load');
+
+  // a country marked on the world map must not read as "all of it" here
+  await clickCountry(page, 'TR');
+  await page.waitForFunction(() => document.querySelector('path[data-code=TR]').classList.contains('lv2'));
+  const painted = await stableFill(page, 'path[data-code=TR]');
+
+  await page.click('#viewCities');
+  await page.waitForSelector('#citycells .cellmesh', { timeout: 25000 });
+  await settled(page);
+  assert.ok((await page.$$eval('#citycells > g', (g) => g.length)) > 150, 'one clipped group per country');
+  const plain = await stableFill(page, 'path[data-code=DE]');
+  assert.notEqual(plain, painted);
+  await page.waitForFunction(
+    (flat) => getComputedStyle(document.querySelector('path[data-code=TR]')).fill === flat,
+    {}, plain
+  ).catch(() => { throw new Error('the country is still painted in the city view'); });
+
+  // a press anywhere on land marks the city whose area it fell in
+  const spot = await page.evaluate(() => {
+    const box = document.querySelector('path[data-code=TR]').getBoundingClientRect();
+    return { x: box.x + box.width * 0.4, y: box.y + box.height * 0.5 };
+  });
+  await page.mouse.click(spot.x, spot.y);
+  await page.waitForFunction(() => document.querySelectorAll('#citycells .cell').length === 1);
+  const cell = await page.$eval('#citycells .cell', (c) => c.getAttribute('class'));
+  assert.match(cell, /\bon\b.*\blv2\b/, 'the area carries the brush level');
+  assert.match(await text(page, '#scoreSub'), /şehir · 1 ülkede/);
+  assert.match(await page.$eval('.row.city-row .nm', (e) => e.textContent), /, Türkiye$/, 'and the list names it');
+
+  // Reset here is about cities, and the country keeps its own colour
+  await page.click('#resetBtn');
+  await page.click('#resetBtn');
+  await page.waitForFunction(() => !document.querySelectorAll('#citycells .cell').length);
+  await page.click('#viewMap');
+  await page.waitForFunction(
+    (green) => getComputedStyle(document.querySelector('path[data-code=TR]')).fill === green,
+    {}, painted
+  ).catch(() => { throw new Error('the country lost its mark to the city view'); });
+  assert.deepEqual(page.errors, []);
+  await close(page);
+});
+
+test('a city marked in the city view travels in the link', async () => {
+  const page = await open('?lang=tr&view=cities');
+  await page.waitForSelector('#citycells .cellmesh', { timeout: 25000 });
+  await page.type('#search', 'izmir');
+  await page.waitForSelector('.row.city-row.found');
+  await page.click('.row.city-row.found');
+  await page.waitForFunction(() => document.querySelectorAll('#citycells .cell').length === 1);
+
+  const link = await page.evaluate(() => {
+    document.getElementById('shareBtn').click();
+    return location.hash;
+  });
+  assert.match(link, /&c=/);
+
+  const other = await open(`?lang=tr&view=cities${link}`);
+  await other.waitForFunction(() => document.querySelectorAll('#citycells .cell').length === 1, { timeout: 25000 });
+  assert.equal(await text(other, '#count'), '1', 'the same city, painted, in a fresh browser');
+  assert.deepEqual(page.errors, []);
+  assert.deepEqual(other.errors, []);
+  await close(page);
+  await close(other);
 });
 
 test('the service worker installs and serves the app offline', async () => {
