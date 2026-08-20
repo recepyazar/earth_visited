@@ -667,6 +667,46 @@ test('a province marked on the world map is the same one the country view shows'
   await close(other);
 });
 
+test('a province turns colour the moment it is marked, without a nudge', async () => {
+  // Chrome will not repaint a clipped group when only a fill inside it changed, so
+  // the colour used to wait for the next pan. The pixels are the only witness.
+  const page = await open('?lang=tr');
+  await page.click('#grainSub');
+  await page.waitForSelector('#worldsubs path.sub.world', { timeout: 40000 });
+  await settled(page);
+
+  const patch = async (at) =>
+    (await page.screenshot({ clip: { x: at.x - 3, y: at.y - 3, width: 6, height: 6 } })).toString('base64');
+  const middleOf = (code) =>
+    page.evaluate((id) => {
+      const el = document.querySelector(`path[data-sub="${id}"]`);
+      const box = el.getBBox();
+      const pt = el.ownerSVGElement.createSVGPoint();
+      pt.x = box.x + box.width / 2;
+      pt.y = box.y + box.height / 2;
+      const at = pt.matrixTransform(el.getScreenCTM());
+      return { x: Math.round(at.x), y: Math.round(at.y) };
+    }, code);
+
+  for (const code of ['US-TX', 'BR-SP']) {
+    const at = await middleOf(code);
+    const before = await patch(at);
+    await page.mouse.click(at.x, at.y);
+    await page.waitForFunction((id) => document.querySelector(`path[data-sub="${id}"]`).classList.contains('on'), {}, code);
+    await new Promise((r) => setTimeout(r, 300));
+    assert.notEqual(await patch(at), before, `${code} is painted on screen, not just in the DOM`);
+
+    // and clearing it puts the colour back where it was
+    const painted = await patch(at);
+    await page.mouse.click(at.x, at.y);
+    await page.waitForFunction((id) => !document.querySelector(`path[data-sub="${id}"]`).classList.contains('on'), {}, code);
+    await new Promise((r) => setTimeout(r, 300));
+    assert.notEqual(await patch(at), painted, `${code} is cleared on screen too`);
+  }
+  assert.deepEqual(page.errors, []);
+  await close(page);
+});
+
 test('the globe is made of provinces too, and marks them', async () => {
   const page = await open('?lang=tr&view=globe&grain=sub');
   await page.waitForFunction(() => document.getElementById('globe') && !document.getElementById('globe').hidden, { timeout: 30000 });

@@ -1183,6 +1183,11 @@
     for (const path of subPaths.get(id) || []) {
       path.classList.toggle('on', lv > 0);
       for (const l of LEVELS) path.classList.toggle(`lv${l.id}`, lv === l.id);
+      // Chrome does not repaint a clipped group when only a fill inside it changes —
+      // the colour would appear the next time you panned. Moving the path to the end
+      // of its group invalidates it, and puts the one you marked over its neighbours'
+      // borders while it is at it.
+      if (path.parentNode) path.parentNode.appendChild(path);
     }
     const row = els[id] && els[id].row;
     if (row) {
@@ -1637,7 +1642,7 @@
   /* ---------------- globe ---------------- */
   // ?v= keeps a cached stylesheet from ever pairing with a newer script; bump it
   // in index.html and here together when deploying
-  const ASSET_V = 'v=16';
+  const ASSET_V = 'v=17';
   const GLOBE_FILES = [
     'js/vendor/d3-array-shim.js',
     'js/vendor/d3-geo.min.js',

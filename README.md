@@ -245,6 +245,11 @@ lookup and a division. On the globe the provinces you have marked are filled on 
 half thousand borders are drawn only once the globe has been still for 180 ms, so a drag costs exactly what
 it costs with countries (measured 43 ms a frame against 48).
 
+One more thing worth knowing: Chrome does not repaint a clipped group when only a fill inside it changes, so
+a freshly marked province kept its old colour until the next pan. Marking now moves the province's path to the
+end of its group, which invalidates it — and draws the one you marked over its neighbours' borders. A browser
+test compares the actual pixels before and after a click, because the DOM was right the whole time.
+
 Two small things while you are inside a country: a press anywhere outside it takes you back to the world, and
 the "81 provinces ›" shortcut on the tap strip is a real button (the strip itself passes presses through to
 the map, which is why that shortcut could not be tapped at all before).
