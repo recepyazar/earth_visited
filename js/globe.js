@@ -28,6 +28,9 @@ window.Globe = (() => {
   let features = []; // { code, feature }
   let byCode = new Map();
   let centroids = {};
+  let subs = []; // { code, country, feature } — provinces, when that grain is on
+  let subsByCountry = new Map();
+  let sharp = 0; // the borders pass is expensive, so it waits for a still globe
 
   let rotation = [-25, -20, 0];
   let zoom = 1;
@@ -35,6 +38,7 @@ window.Globe = (() => {
   let pointers = new Map();
   let dragged = 0;
   let pressCode = null;
+  let pressIsSub = false;
   let pinch = null;
   let hoverEvent = null;
   let hoverFrame = 0;
@@ -78,7 +82,7 @@ window.Globe = (() => {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const radius = (Math.min(rect.width, rect.height) / 2 - 6) * zoom;
     projection.scale(radius).translate([rect.width / 2, rect.height / 2]);
-    render();
+    render(true);
   }
 
   function radiusNow() {
@@ -87,7 +91,7 @@ window.Globe = (() => {
   }
 
   /* ---------- drawing ---------- */
-  function render() {
+  function render(quality) {
     if (!ctx || !projection) return;
     frame = 0;
     const rect = canvas.getBoundingClientRect();
@@ -111,19 +115,48 @@ window.Globe = (() => {
     ctx.stroke();
     ctx.globalAlpha = 1;
 
-    // countries
+    // countries — plain while the provinces are the subject
+    const onSubs = opts.grain && opts.grain() === 'sub' && subs.length;
     for (const { code, feature } of features) {
       const dim = opts.dimmed(code);
       ctx.beginPath();
       path(feature);
       ctx.globalAlpha = dim ? 0.22 : 1;
-      ctx.fillStyle = opts.colorOf(code) || c.land;
+      ctx.fillStyle = (onSubs ? null : opts.colorOf(code)) || c.land;
       ctx.fill();
       ctx.strokeStyle = c.border;
       ctx.lineWidth = 0.5;
       ctx.stroke();
     }
     ctx.globalAlpha = 1;
+
+    if (onSubs) {
+      // the ones you have marked, always; every border only once the globe is still,
+      // because four and a half thousand of them is too much for a drag frame
+      for (const { code, feature } of subs) {
+        const fill = opts.subColor(code);
+        if (!fill) continue;
+        ctx.beginPath();
+        path(feature);
+        ctx.fillStyle = fill;
+        ctx.fill();
+        ctx.strokeStyle = c.border;
+        ctx.lineWidth = 0.5;
+        ctx.stroke();
+      }
+      if (quality) {
+        ctx.beginPath();
+        for (const { code, feature } of subs) {
+          if (opts.subColor(code)) continue; // already drawn, with its own fill
+          path(feature);
+        }
+        ctx.strokeStyle = c.border;
+        ctx.globalAlpha = 0.55;
+        ctx.lineWidth = 0.4;
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
+    }
 
     // dots for countries too small to see at this size
     const dotR = 3;
@@ -151,7 +184,10 @@ window.Globe = (() => {
   }
 
   function schedule() {
-    if (!frame) frame = requestAnimationFrame(render);
+    if (!frame) frame = requestAnimationFrame(() => render(false));
+    // and once nothing has moved for a moment, draw the expensive pass
+    clearTimeout(sharp);
+    sharp = setTimeout(() => render(true), 180);
   }
 
   // is this lon/lat on the side facing us?
@@ -193,11 +229,38 @@ window.Globe = (() => {
     return null;
   }
 
+  // which province is under this point — only the open country's are tried
+  function pickSub(clientX, clientY) {
+    if (!subs.length) return null;
+    const rect = canvas.getBoundingClientRect();
+    const ll = projection.invert([clientX - rect.left, clientY - rect.top]);
+    if (!ll || !Number.isFinite(ll[0])) return null;
+    const country = pick(clientX, clientY);
+    const list = subsByCountry.get(country) || subs;
+    for (const { code, feature } of list) {
+      if (d3.geoContains(feature, ll)) return code;
+    }
+    return null;
+  }
+
+  function setSubs(list) {
+    subs = list || [];
+    subsByCountry = new Map();
+    for (const entry of subs) {
+      const group = subsByCountry.get(entry.country);
+      if (group) group.push(entry);
+      else subsByCountry.set(entry.country, [entry]);
+    }
+    schedule();
+  }
+
   /* ---------- interaction ---------- */
   function onDown(e) {
     pointers.set(e.pointerId, e);
     dragged = 0;
-    pressCode = pointers.size === 1 ? pick(e.clientX, e.clientY) : null;
+    const onSubs = opts.grain && opts.grain() === 'sub' && subs.length;
+    pressCode = pointers.size === 1 ? (onSubs ? pickSub(e.clientX, e.clientY) : pick(e.clientX, e.clientY)) : null;
+    pressIsSub = onSubs;
     if (pointers.size === 2) {
       const [a, b] = [...pointers.values()];
       pinch = { dist: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY), zoom };
@@ -213,7 +276,9 @@ window.Globe = (() => {
           hoverFrame = requestAnimationFrame(() => {
             hoverFrame = 0;
             if (!hoverEvent || !canvas) return;
-            opts.onHover(pick(hoverEvent.clientX, hoverEvent.clientY), hoverEvent);
+            const onSubs = opts.grain && opts.grain() === 'sub' && subs.length;
+            if (onSubs && opts.onHoverSub) opts.onHoverSub(pickSub(hoverEvent.clientX, hoverEvent.clientY), hoverEvent);
+            else opts.onHover(pick(hoverEvent.clientX, hoverEvent.clientY), hoverEvent);
           });
         }
       }
@@ -248,7 +313,9 @@ window.Globe = (() => {
     pointers.delete(e.pointerId);
     if (pointers.size < 2) pinch = null;
     if (!pointers.size) canvas.classList.remove('dragging');
-    if (e.type === 'pointerup' && pressCode && dragged <= DRAG_SLOP) opts.onPick(pressCode);
+    if (e.type === 'pointerup' && pressCode && dragged <= DRAG_SLOP) {
+      (pressIsSub ? opts.onPickSub : opts.onPick)(pressCode);
+    }
     pressCode = null;
   }
 
@@ -307,5 +374,5 @@ window.Globe = (() => {
     schedule();
   }
 
-  return { mount, unmount, render: schedule, resize, spinTo, reset, zoomBy, pick, get mounted() { return !!canvas; } };
+  return { mount, unmount, setSubs, render: schedule, resize, spinTo, reset, zoomBy, pick, get mounted() { return !!canvas; } };
 })();

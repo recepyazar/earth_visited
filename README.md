@@ -36,12 +36,13 @@ Inspired by [turkeyvisited](https://ozanyerli.github.io/turkeyvisited/), but for
   50 KB). The detail layer is 1:10m, so an open country zooms far deeper than the world map's 24x, the reset
   button re-fits the country rather than jumping back out, and the country's own fill steps aside while you
   are inside it.
-- **The city view** — the third button on the map splits every country into the provinces and states it is
-  actually made of: Türkiye's 81 provinces, the 50 US states, Bavaria, Tuscany, Hokkaidō — 4,471 of them
-  worldwide. Each one can be marked on its own, a country with nothing marked stays uncoloured, and the
-  search box finds any of them in your language ("Bavyera", "Kaliforniya"). They are the same units, in the
-  same order, as a country's own detail view, so a province marked here is marked there too and rides in the
-  same link. The layer is fetched only when you open this view.
+- **Countries or provinces, on either view** — two switches sit on the map: one picks the flat map or the
+  globe, the other picks what they are made of. Switch to provinces and every country splits into the units
+  it is actually made of — Türkiye's 81 provinces, the 50 US states, Bavaria, Tuscany, Hokkaidō, 4,471 of
+  them worldwide — on the flat map *and* on the globe. Each one is marked on its own, a country with nothing
+  marked stays uncoloured, and the search box finds any of them in your language ("Bavyera", "Kaliforniya").
+  They are the same units, in the same order, as a country's own detail view, so a province marked here is
+  marked there too and rides in the same link. The layer is fetched only when you ask for it.
 - **Cities** — type a city into the same search box and it appears under the countries, `İzmir, Türkiye`.
   Marking one paints a dot on the world map instead of colouring the whole country, so a single trip to Rome
   does not claim all of Italy. Cities answer to their name in your language — “Roma”, “Viyana”, “Москва” —
@@ -235,6 +236,18 @@ Each country's provinces are drawn in their own group, clipped to that country's
 come from different resolutions and would otherwise disagree along the coast. The strokes are drawn in screen
 pixels (`vector-effect: non-scaling-stroke`), which measured about twice as fast on a phone as a stroke that
 scales with the transform.
+
+The globe needs the same provinces in lon/lat, and gets them from the very same file: the map's projection is
+invertible, so nothing extra is downloaded. Running a million points through d3's Natural Earth solver takes
+seconds, so instead one table of 1,800 latitudes is built once — the projection is separable, y depends only
+on latitude and x is longitude times a factor that depends only on latitude — and every inversion becomes a
+lookup and a division. On the globe the provinces you have marked are filled on every frame; the four and a
+half thousand borders are drawn only once the globe has been still for 180 ms, so a drag costs exactly what
+it costs with countries (measured 43 ms a frame against 48).
+
+Two small things while you are inside a country: a press anywhere outside it takes you back to the world, and
+the "81 provinces ›" shortcut on the tap strip is a real button (the strip itself passes presses through to
+the map, which is why that shortcut could not be tapped at all before).
 
 Cities are also part of the ordinary map: they are the same list and the same brush as everything else. Searching for one loads
 the index, marking one draws a dot into `#citymarks` — only marked cities are ever in the DOM, which is why

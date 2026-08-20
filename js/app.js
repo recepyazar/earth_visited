@@ -74,6 +74,9 @@
   let resetTimer;
   let animTimer;
   let mode = 'map'; // which view is on screen: 'map' | 'globe'
+  // and what the view is made of: whole countries, or the provinces inside them.
+  // The two are independent — the globe has both, and so does the flat map.
+  let grain = 'country'; // 'country' | 'sub'
   const subMarks = new Map(); // 'TR-34' -> level, provinces of every country
   const cityMarks = new Map(); // geonameid -> level
   let detail = null; // { code, units, byId, box, group } while a country is open
@@ -121,7 +124,7 @@
 
   function savePrefs() {
     try {
-      localStorage.setItem(PREF_KEY, JSON.stringify({ lang, theme, colors, view: mode }));
+      localStorage.setItem(PREF_KEY, JSON.stringify({ lang, theme, colors, view: mode, grain }));
     } catch { /* private mode */ }
   }
 
@@ -211,12 +214,16 @@
     lang = I18N.pick(systemLangs, saved?.lang);
     theme = ['dark', 'light', 'auto'].includes(saved?.theme) ? saved.theme : 'auto';
     colors = saved && typeof saved.colors === 'object' && saved.colors ? { ...saved.colors } : {};
-    mode = saved?.view === 'globe' || saved?.view === 'cities' ? saved.view : 'map';
+    // saved before the two were split, when "cities" was a view of its own
+    mode = saved?.view === 'globe' ? 'globe' : 'map';
+    grain = saved?.grain === 'sub' || saved?.view === 'cities' ? 'sub' : 'country';
     // ?lang=de / ?theme=light let a shared link pick how it opens
     const q = new URLSearchParams(location.search);
     if (known(q.get('lang'))) lang = q.get('lang');
     if (['dark', 'light', 'auto'].includes(q.get('theme'))) theme = q.get('theme');
-    if (['globe', 'map', 'cities'].includes(q.get('view'))) mode = q.get('view');
+    if (['globe', 'map'].includes(q.get('view'))) mode = q.get('view');
+    if (q.get('view') === 'cities') grain = 'sub'; // links written before the split
+    if (['country', 'sub'].includes(q.get('grain'))) grain = q.get('grain');
   }
 
   /* ---------------- map ---------------- */
@@ -365,6 +372,19 @@
     }
   }
 
+  // is this press within the country whose provinces are open?
+  function insideDetail(e) {
+    const shape = detail && els[detail.code] && els[detail.code].shape;
+    if (!shape || !shape.isPointInFill) return true; // no way to tell: leave it alone
+    // through the shape's own matrix, so the zoom and the layer's scale are both in it
+    const ctm = shape.getScreenCTM();
+    if (!ctm) return true;
+    const pt = map.createSVGPoint();
+    pt.x = e.clientX;
+    pt.y = e.clientY;
+    return shape.isPointInFill(pt.matrixTransform(ctm.inverse()));
+  }
+
   function svgPoint(evt) {
     const ctm = map.getScreenCTM();
     if (!ctm) return { x: 0, y: 0 };
@@ -399,7 +419,7 @@
       // because capturing the pointer for panning would retarget a later click event.
       pressCity = pointers.size === 1 ? (e.target.dataset && +e.target.dataset.city) || null : null;
       pressSub = pointers.size === 1 ? subAt(e) : null;
-      pressCode = pointers.size === 1 && !pressSub && !(mode === 'cities') ? codeAt(e.target, e.clientX, e.clientY) : null;
+      pressCode = pointers.size === 1 && !pressSub && grain !== 'sub' ? codeAt(e.target, e.clientX, e.clientY) : null;
       previewed = false;
       clearTimeout(pressTimer);
       if (pressCode || pressSub || pressCity) {
@@ -456,6 +476,8 @@
         if (pressCity) toggleCity(pressCity);
         else if (pressSub) toggleSub(pressSub);
         else if (pressCode) toggle(pressCode);
+        // inside a country, a press on anything but the country itself is a way out
+        else if (detail && !insideDetail(e)) closeDetail();
       }
       pressCode = null;
       pressSub = null;
@@ -490,7 +512,7 @@
       return;
     }
     const sub = subAt(e);
-    if (sub && (detail || mode === 'cities')) {
+    if (sub && (detail || grain === 'sub')) {
       const unit = unitOf(sub);
       if (!unit) return hideTip();
       const country = !detail && byCode.get(subOwner.get(sub));
@@ -599,7 +621,7 @@
   function buildList() {
     clearHighlights();
     if (detail) return buildDetailList();
-    if (mode === 'cities') return buildCityList();
+    if (grain === 'sub') return buildCityList();
     const frag = document.createDocumentFragment();
     const sorted = [...FEATURES].sort((a, b) => nameOf(a).localeCompare(nameOf(b), lang));
     for (const f of sorted) {
@@ -776,7 +798,7 @@
     let onShown = 0;
     let offShown = 0;
     // the city view's list is cities: marked ones first, search results under them
-    if (mode === 'cities') return buildCityList();
+    if (grain === 'sub') return buildCityList();
     if (detail) {
       for (const unit of detail.units) {
         const row = els[unit.c] && els[unit.c].row;
@@ -840,7 +862,7 @@
     const frag = document.createDocumentFragment();
     frag.appendChild(head);
     for (const city of top) {
-      if (mode === 'cities' && cityMarks.has(city.i)) continue; // already listed above
+      if (grain === 'sub' && cityMarks.has(city.i)) continue; // already listed above
       frag.appendChild(cityRow(city, true));
     }
     list.appendChild(frag);
@@ -945,7 +967,7 @@
       renderBrush(perLevel);
       return;
     }
-    if (mode === 'cities') {
+    if (grain === 'sub') {
       // the score is about provinces here, and the brush counts them too
       const done = subMarks.size;
       const total = worldSubCount() || done;
@@ -1068,8 +1090,7 @@
 
   async function openDetail(code) {
     if (!hasDetail(code)) return;
-    // neither the globe nor the city mosaic has a province layer, so opening one
-    // takes you back to the flat map rather than leaving the control dead
+    // the province layer of one country is drawn on the flat map
     if (mode !== 'map') await setView('map');
     const data = await loadDetail(code);
     if (!data) return toast(t('copyFail'));
@@ -1178,7 +1199,7 @@
     else subMarks.delete(id);
     paintSub(id);
     flashSub(id, next);
-    if (mode === 'cities') buildList();
+    if (grain === 'sub') buildList();
     updateScore();
     updateHeads();
     save();
@@ -1410,6 +1431,133 @@
     for (const code of subMarks.keys()) paintSub(code);
   }
 
+  // The globe wants lon/lat, and the province data is in map coordinates — but the
+  // map's projection is invertible, so the same file serves both views and nothing
+  // extra is downloaded for the globe.
+  let globeSubs = null;
+  let globeSubsLoading = null;
+
+  function decodePath(d, ps) {
+    const rings = [];
+    let ring = null;
+    let x = 0;
+    let y = 0;
+    const tokens = d.match(/[MmlZ]|-?\d+/g) || [];
+    let mode = '';
+    for (let i = 0; i < tokens.length; i++) {
+      const token = tokens[i];
+      if (token === 'Z') {
+        ring = null;
+        continue;
+      }
+      if (/[MmlZ]/.test(token)) {
+        mode = token;
+        if (token === 'M' || token === 'm') {
+          const dx = +tokens[++i];
+          const dy = +tokens[++i];
+          x = token === 'M' ? dx : x + dx;
+          y = token === 'M' ? dy : y + dy;
+          ring = [[x / ps, y / ps]];
+          rings.push(ring);
+        }
+        continue;
+      }
+      // a bare number pair continues the current line
+      const dx = +token;
+      const dy = +tokens[++i];
+      x += dx;
+      y += dy;
+      if (ring) ring.push([x / ps, y / ps]);
+      void mode;
+    }
+    return rings.filter((r) => r.length > 2);
+  }
+
+  // Inverting a million points through d3's Natural Earth solver takes seconds. The
+  // projection is separable — y depends only on latitude, x is longitude times a
+  // factor that depends only on latitude — so one table of 1,800 latitudes turns
+  // every inversion into a lookup and a division.
+  function inverter() {
+    const proj = d3.geoNaturalEarth1().precision(0.1);
+    proj.fitWidth(1000, { type: 'Sphere' });
+    const top = proj([0, 90])[1];
+    proj.translate([proj.translate()[0], proj.translate()[1] - top]);
+
+    const STEPS = 1800;
+    const ys = new Float64Array(STEPS + 1);
+    const x0 = new Float64Array(STEPS + 1);
+    const dx = new Float64Array(STEPS + 1);
+    for (let i = 0; i <= STEPS; i++) {
+      const lat = 90 - (180 * i) / STEPS; // y grows downwards, so latitude descends
+      const a = proj([0, lat]);
+      const b = proj([1, lat]);
+      ys[i] = a[1];
+      x0[i] = a[0];
+      dx[i] = b[0] - a[0];
+    }
+
+    return ([x, y]) => {
+      if (!(y >= ys[0]) || y > ys[STEPS]) return null;
+      let lo = 0;
+      let hi = STEPS;
+      while (hi - lo > 1) {
+        const mid = (lo + hi) >> 1;
+        if (ys[mid] <= y) lo = mid;
+        else hi = mid;
+      }
+      const span = ys[hi] - ys[lo] || 1;
+      const f = (y - ys[lo]) / span;
+      const lat = 90 - (180 * (lo + f)) / STEPS;
+      const width = dx[lo] + (dx[hi] - dx[lo]) * f;
+      const left = x0[lo] + (x0[hi] - x0[lo]) * f;
+      if (!width) return null;
+      const lon = (x - left) / width;
+      return lon >= -181 && lon <= 181 ? [lon, lat] : null;
+    };
+  }
+
+  function ensureGlobeSubs() {
+    if (globeSubs) return Promise.resolve(globeSubs);
+    if (!globeSubsLoading) {
+      globeSubsLoading = Promise.all([ensureGlobe(), ensureWorldSubs()])
+        .then(([globeReady, data]) => {
+          if (!globeReady || !data) return null;
+          const invert = inverter();
+          const out = [];
+          for (const [country, list] of Object.entries(data.u)) {
+            for (const unit of list) {
+              const polygons = [];
+              for (const ring of decodePath(unit.d, data.ps)) {
+                const ll = [];
+                for (const point of ring) {
+                  const at = invert(point);
+                  if (at) ll.push(at);
+                }
+                if (ll.length > 2) {
+                  ll.push(ll[0]);
+                  polygons.push([ll]);
+                }
+              }
+              if (!polygons.length) continue;
+              out.push({
+                code: unit.c,
+                country,
+                feature: { type: 'Feature', geometry: { type: 'MultiPolygon', coordinates: polygons } },
+              });
+            }
+          }
+          globeSubs = out;
+          Globe.setSubs(out);
+          return out;
+        })
+        .catch(() => {
+          globeSubsLoading = null;
+          return null;
+        });
+    }
+    return globeSubsLoading;
+  }
+
   function register(code, path) {
     const list = subPaths.get(code);
     if (list) list.push(path);
@@ -1451,7 +1599,7 @@
     else cityMarks.delete(id);
     drawCities();
     flashCity(id, next);
-    if (mode === 'cities') buildList(); // the city view lists what you have marked
+    if (grain === 'sub') buildList(); // the city view lists what you have marked
     const row = els[`c${id}`] && els[`c${id}`].row;
     if (row) {
       row.classList.toggle('on', next > 0);
@@ -1489,7 +1637,7 @@
   /* ---------------- globe ---------------- */
   // ?v= keeps a cached stylesheet from ever pairing with a newer script; bump it
   // in index.html and here together when deploying
-  const ASSET_V = 'v=15';
+  const ASSET_V = 'v=16';
   const GLOBE_FILES = [
     'js/vendor/d3-array-shim.js',
     'js/vendor/d3-geo.min.js',
@@ -1538,51 +1686,81 @@
         border: cssVar('--border'),
         line: cssVar('--line'),
       }),
+      grain: () => grain,
+      subColor: (code) => (subMarks.has(code) ? cssVar(`--lv${subMarks.get(code)}`) : null),
+      onPickSub: (code) => toggleSub(code),
       onPick: (code) => toggle(code),
       onHover: (code, e) => {
         if (!code || !e) return hideTip();
         showTip(code, e.clientX, e.clientY);
+      },
+      onHoverSub: (code, e) => {
+        const unit = code && unitOf(code);
+        if (!unit || !e) return hideTip();
+        const country = byCode.get(subOwner.get(code));
+        const rect = mapwrap.getBoundingClientRect();
+        tip.replaceChildren(`${subNameOf(unit)}${country ? `, ${nameOf(country)}` : ''}`);
+        tip.hidden = false;
+        tip.style.left = `${e.clientX - rect.left}px`;
+        tip.style.top = `${e.clientY - rect.top}px`;
       },
     };
   }
 
   async function setView(next) {
     if (next === 'globe' && !(await ensureGlobe())) return;
-    if (next === 'cities') {
+    mode = next;
+    savePrefs();
+    applyViewState();
+    if (mode === 'globe') {
+      if (!Globe.mounted) Globe.mount($('globe'), globeOptions());
+      Globe.resize();
+      if (activeRegion) Globe.spinTo(regionAnchor(activeRegion), 1.35);
+      if (grain === 'sub') ensureGlobeSubs();
+    }
+  }
+
+  // Countries or the provinces inside them — the same choice in either view.
+  async function setGrain(next) {
+    if (next === grain) return;
+    if (next === 'sub') {
       if (detail) closeDetail(); // one country's provinces, or the whole world's
       toast(t('loadingCities'));
       if (!(await ensureWorldSubs())) return toast(t('copyFail'));
       buildSubLayer();
+      if (mode === 'globe') await ensureGlobeSubs();
     }
-    mode = next;
+    grain = next;
     savePrefs();
+    applyViewState();
+  }
+
+  // everything both switches change, in one place
+  function applyViewState() {
     const onGlobe = mode === 'globe';
-    const onCities = mode === 'cities';
-    document.body.classList.toggle('in-cities', onCities);
-    if (subGroup) subGroup.style.display = onCities ? '' : 'none';
+    const onSubs = grain === 'sub';
+    document.body.classList.toggle('in-subs', onSubs);
+    if (subGroup) subGroup.style.display = onSubs && !onGlobe ? '' : 'none';
     // set display inline as well as the attribute: a stale cached stylesheet without
     // the [hidden] rules would otherwise leave the flat map showing under the globe
     $('map').hidden = onGlobe;
     $('map').style.display = onGlobe ? 'none' : '';
     $('globe').hidden = !onGlobe;
     $('globe').style.display = onGlobe ? '' : 'none';
-    $('viewMap').classList.toggle('on', !onGlobe && !onCities);
+    $('viewMap').classList.toggle('on', !onGlobe);
     $('viewGlobe').classList.toggle('on', onGlobe);
-    $('viewCities').classList.toggle('on', onCities);
+    $('grainCountry').classList.toggle('on', !onSubs);
+    $('grainSub').classList.toggle('on', onSubs);
     $('hint').textContent = hintText();
     hideTip();
     buildList();
     updateScore();
-    if (onGlobe) {
-      if (!Globe.mounted) Globe.mount($('globe'), globeOptions());
-      Globe.resize();
-      if (activeRegion) Globe.spinTo(regionAnchor(activeRegion), 1.35);
-    }
+    redrawGlobe();
   }
 
   const hintText = () =>
-    mode === 'globe' ? t('hintGlobe')
-      : mode === 'cities' ? t('hintCities')
+    grain === 'sub' ? t('hintCities')
+      : mode === 'globe' ? t('hintGlobe')
         : matchMedia('(hover: none)').matches ? t('hintTouch') : t('hint');
 
   // rough centre of a continent: the marked-or-not country closest to its box centre
@@ -1670,7 +1848,7 @@
   }
 
   function shareMessage() {
-    if (mode === 'cities') return t('shareTextSubs').replace('{n}', subMarks.size);
+    if (grain === 'sub') return t('shareTextSubs').replace('{n}', subMarks.size);
     const s = stats();
     return t('shareText').replace('{n}', s.sov).replace('{total}', s.total).replace('{pct}', withPct(s.pct));
   }
@@ -1741,7 +1919,7 @@
   }
 
   function buildCardSVG(size) {
-    if (mode === 'cities') return EarthCard.build(subCardInput(size));
+    if (grain === 'sub') return EarthCard.build(subCardInput(size));
     const s = stats();
     const selected = FEATURES.filter((f) => been(f.c) && isCountry(f))
       .map(nameOf)
@@ -2052,7 +2230,7 @@
     });
     // two-step reset instead of a browser confirm(): the second tap does it
     $('resetBtn').onclick = () => {
-      const nothing = detail ? !detailCount() : mode === 'cities' ? !subMarks.size : !marks.size && !subMarks.size && !cityMarks.size;
+      const nothing = detail ? !detailCount() : grain === 'sub' ? !subMarks.size : !marks.size && !subMarks.size && !cityMarks.size;
       if (nothing) return;
       if (!resetArmed) {
         resetArmed = true;
@@ -2067,7 +2245,7 @@
         // inside a country, Reset means "this country's provinces", not the world
         for (const unit of detail.units) subMarks.delete(unit.c);
         for (const id of detail.byId.keys()) paintSub(id);
-      } else if (mode === 'cities') {
+      } else if (grain === 'sub') {
         // and in the city view it means the provinces, not the countries
         const all = [...subMarks.keys()];
         subMarks.clear();
@@ -2089,13 +2267,16 @@
     $('crumbBack').onclick = () => closeDetail();
     $('viewMap').onclick = () => setView('map');
     $('viewGlobe').onclick = () => setView('globe');
-    $('viewCities').onclick = () => setView(mode === 'cities' ? 'map' : 'cities');
-    if (mode !== 'map') {
-      const wanted = mode;
-      mode = 'map'; // setView does the switching work, including the lazy load
-      setView(wanted);
+    $('grainCountry').onclick = () => setGrain('country');
+    $('grainSub').onclick = () => setGrain('sub');
+    if (mode !== 'map' || grain !== 'country') {
+      const view = mode;
+      const want = grain;
+      mode = 'map'; // the setters do the switching work, including the lazy loads
+      grain = 'country';
+      setView(view).then(() => setGrain(want));
     }
-    // the globe has no province layer yet, so opening one closes the other
+    // a country's provinces are a flat-map thing; the globe closes them
     $('viewGlobe').addEventListener('click', () => detail && closeDetail());
 
     $('settingsBtn').onclick = () => {

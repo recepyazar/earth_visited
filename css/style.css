@@ -737,6 +737,9 @@ img.flag { width: 20px; height: 14px; object-fit: cover; border-radius: 2px; }
   background: color-mix(in srgb, var(--panel) 88%, transparent);
   box-shadow: var(--shadow);
 }
+/* the second switch sits directly under the first one (after it in the file, so it
+   wins on the shared `top`) */
+.viewswitch.grainswitch { top: 56px; }
 .vbtn {
   display: inline-flex;
   align-items: center;
@@ -905,21 +908,21 @@ body.in-detail #regionBlock { display: none; } /* filtering continents inside a 
 #worldsubs .sub.world.hl { stroke: var(--accent); stroke-width: 2; }
 /* the countries themselves step back: in this view the colour belongs to provinces,
    and a country you have been to must not read as "all of it visited" */
-body.in-cities .land,
-body.in-cities .land.on,
-body.in-cities .land.lv1, body.in-cities .land.lv2,
-body.in-cities .land.lv3, body.in-cities .land.lv4 {
+body.in-subs .land,
+body.in-subs .land.on,
+body.in-subs .land.lv1, body.in-subs .land.lv2,
+body.in-subs .land.lv3, body.in-subs .land.lv4 {
   fill: var(--land);
   stroke: var(--border);
 }
-body.in-cities .land.dim { opacity: 1; }
+body.in-subs .land.dim { opacity: 1; }
 /* the provinces take every press in this view. Chrome's touch adjustment otherwise
    hands a tap to the country underneath, which is not what is being marked here. */
-body.in-cities .land { pointer-events: none; }
-body.in-cities .dot, body.in-cities #hits { display: none; }
-body.in-cities #regionBlock,
-body.in-cities .tiles,
-body.in-cities .divider { display: none; } /* land area and continents are a country thing */
+body.in-subs .land { pointer-events: none; }
+body.in-subs .dot, body.in-subs #hits { display: none; }
+body.in-subs #regionBlock,
+body.in-subs .tiles,
+body.in-subs .divider { display: none; } /* land area and continents are a country thing */
 
 /* only the cities you have marked are drawn, so they sit on top of everything */
 #citymarks { pointer-events: bounding-box; }

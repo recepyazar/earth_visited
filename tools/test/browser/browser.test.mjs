@@ -346,12 +346,16 @@ const clickProvince = async (page, id) => {
     return null;
   }, id);
   if (!point) throw new Error(`no point inside ${id}`);
-  await page.mouse.click(point.x, point.y);
-  await page
-    .waitForFunction((code) => document.querySelector(`path[data-sub="${code}"]`).classList.contains('on'), {}, id)
-    .catch(() => {
-      throw new Error(`the click missed ${id}`);
-    });
+  // the suite runs several browsers at once, and a busy machine can swallow a click
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await page.mouse.click(point.x, point.y);
+    const landed = await page
+      .waitForFunction((code) => document.querySelector(`path[data-sub="${code}"]`).classList.contains('on'), { timeout: 6000 }, id)
+      .then(() => true)
+      .catch(() => false);
+    if (landed) return;
+  }
+  throw new Error(`the click missed ${id}`);
 };
 
 const openTurkey = async (page) => {
@@ -565,7 +569,7 @@ test('a city survives a reload and clears with the map', async () => {
   await close(page);
 });
 
-test('the city view splits every country into its provinces', async () => {
+test('the province view splits every country into its provinces', async () => {
   const page = await open('?lang=tr');
   const fetched = () => page.evaluate(() =>
     performance.getEntriesByType('resource').some((r) => r.name.includes('admin1/world.js')));
@@ -576,7 +580,7 @@ test('the city view splits every country into its provinces', async () => {
   await page.waitForFunction(() => document.querySelector('path[data-code=TR]').classList.contains('lv2'));
   const painted = await stableFill(page, 'path[data-code=TR]');
 
-  await page.click('#viewCities');
+  await page.click('#grainSub');
   await page.waitForSelector('#worldsubs path.sub.world', { timeout: 40000 });
   await settled(page);
   assert.ok((await page.$$eval('#worldsubs path.sub.world', (p) => p.length)) > 4000, 'the whole world, by province');
@@ -614,7 +618,7 @@ test('the city view splits every country into its provinces', async () => {
   await page.click('#resetBtn');
   await page.click('#resetBtn');
   await page.waitForFunction(() => !document.querySelectorAll('#worldsubs .sub.on').length);
-  await page.click('#viewMap');
+  await page.click('#grainCountry');
   await page.waitForFunction(
     (green) => getComputedStyle(document.querySelector('path[data-code=TR]')).fill === green,
     {}, painted
@@ -623,8 +627,8 @@ test('the city view splits every country into its provinces', async () => {
   await close(page);
 });
 
-test('a province marked in the city view is the same one the country view shows', async () => {
-  const page = await open('?lang=tr&view=cities');
+test('a province marked on the world map is the same one the country view shows', async () => {
+  const page = await open('?lang=tr&view=cities'); // the old link, from before the switch was split
   await page.waitForSelector('#worldsubs path.sub.world', { timeout: 40000 });
 
   // the search finds any province in the world, in the visitor's language
@@ -642,7 +646,7 @@ test('a province marked in the city view is the same one the country view shows'
   await page.evaluate(() => document.getElementById('sheet').close());
 
   // the same mark, seen from inside the country
-  await page.click('#viewMap');
+  await page.click('#grainCountry');
   await openTurkey(page); // a detail view of another country must not disturb it
   await page.evaluate(() => document.getElementById('crumbBack').click());
   await page.waitForFunction(() => !document.querySelector('path.sub:not(.world)'));
@@ -661,6 +665,52 @@ test('a province marked in the city view is the same one the country view shows'
   assert.deepEqual(other.errors, []);
   await close(page);
   await close(other);
+});
+
+test('the globe is made of provinces too, and marks them', async () => {
+  const page = await open('?lang=tr&view=globe&grain=sub');
+  await page.waitForFunction(() => document.getElementById('globe') && !document.getElementById('globe').hidden, { timeout: 30000 });
+  await page.waitForFunction(() => window.Globe && window.Globe.mounted, { timeout: 30000 });
+  assert.equal(await page.$eval('#map', (e) => e.hidden), true, 'the flat map stepped aside');
+  assert.equal(await page.$eval('#grainSub', (e) => e.classList.contains('on')), true, 'and the grain came from the link');
+
+  // the provinces are built from the same file the flat map uses, inverted
+  await page.waitForFunction(() => document.querySelectorAll('#worldsubs path.sub.world').length > 4000, { timeout: 40000 });
+  await page.evaluate(() => window.Globe.spinTo('TR', 3));
+  await new Promise((r) => setTimeout(r, 900));
+
+  const middle = await page.$eval('#globe', (e) => {
+    const r = e.getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  });
+  await page.mouse.click(middle.x, middle.y);
+  await page.waitForFunction(() => document.querySelectorAll('.row.city-row').length === 1, { timeout: 10000 });
+  assert.match(await page.$eval('.row.city-row .nm', (e) => e.textContent), /, Türkiye$/, 'the province under the cursor, in Türkiye');
+  assert.match(await text(page, '#scoreSub'), /il · 1 ülkede/);
+
+  // and it is there on the flat map, in the same grain
+  await page.click('#viewMap');
+  await page.waitForFunction(() => document.querySelectorAll('#worldsubs .sub.on').length === 1);
+  assert.deepEqual(page.errors, []);
+  await close(page);
+});
+
+test('a press outside the open country takes you back to the world', async () => {
+  const page = await open('?lang=tr');
+  await openTurkey(page);
+  await clickProvince(page, 'TR-06');
+  assert.equal(await text(page, '#crumbCount'), '1/81');
+
+  // a press on the sea, well clear of Türkiye
+  const away = await page.evaluate(() => {
+    const box = document.querySelector('path[data-code=TR]').getBoundingClientRect();
+    return { x: box.x + box.width / 2, y: box.y + box.height + 120 };
+  });
+  await page.mouse.click(away.x, away.y);
+  await page.waitForFunction(() => !document.querySelector('path.sub:not(.world)'));
+  assert.equal(await page.$eval('#crumbs', (e) => e.hidden), true, 'the breadcrumb went with it');
+  assert.deepEqual(page.errors, []);
+  await close(page);
 });
 
 test('the service worker installs and serves the app offline', async () => {
