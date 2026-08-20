@@ -299,8 +299,31 @@ test('selections survive a reload, and Reset needs two taps', async () => {
   await close(page);
 });
 
+// helper: the view eases into place over ~450 ms, and a click aimed at where a
+// shape was mid-flight lands somewhere else
+const settled = (page) =>
+  page.waitForFunction(() => {
+    const now = document.querySelector('#map g').getAttribute('transform');
+    const same = window.__lastT === now;
+    window.__lastT = now;
+    return same;
+  }, { polling: 200 });
+
 // helper: click a province by its ISO code, the same "find a point inside" trick
+// fills cross-fade over 0.12 s, so a colour read straight after a class flip can
+// catch a shade that never comes back
+const stableFill = async (page, selector) => {
+  await page.waitForFunction((sel) => {
+    const now = getComputedStyle(document.querySelector(sel)).fill;
+    const same = window.__lastFill === now;
+    window.__lastFill = now;
+    return same;
+  }, { polling: 150 }, selector);
+  return page.$eval(selector, (e) => getComputedStyle(e).fill);
+};
+
 const clickProvince = async (page, id) => {
+  await settled(page);
   const point = await page.evaluate((code) => {
     const el = document.querySelector(`path[data-sub="${code}"]`);
     if (!el) return null;
@@ -337,6 +360,7 @@ const openTurkey = async (page) => {
   await page.waitForSelector('.row[data-code=TR] .into');
   await page.evaluate(() => document.querySelector('.row[data-code=TR] .into').click());
   await page.waitForSelector('path.sub');
+  await settled(page);
 };
 
 test('a country opens into its provinces and closes again', async () => {
@@ -375,6 +399,58 @@ test('opening a country from the globe lands on the flat map, provinces and all'
   await close(page);
 });
 
+test('an open country zooms in far past the world map’s limit', async () => {
+  const page = await open('?lang=tr');
+  const zoom = () => page.evaluate(() => +document.querySelector('#map g').getAttribute('transform').match(/scale\(([\d.]+)\)/)[1]);
+
+  // the world map stops where its 1:50m coastlines do
+  for (let i = 0; i < 8; i++) await page.click('#zoomIn');
+  await new Promise((r) => setTimeout(r, 500));
+  assert.equal(await zoom(), 24, 'the world caps at 24x');
+
+  await openTurkey(page);
+  await new Promise((r) => setTimeout(r, 600));
+  const fitted = await zoom();
+  for (let i = 0; i < 3; i++) {
+    await page.click('#zoomIn');
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  const zoomed = await zoom();
+  assert.ok(zoomed > fitted * 3, `1:10m provinces zoom deeper (${fitted.toFixed(1)} → ${zoomed.toFixed(1)})`);
+
+  // reset goes back to the country you are looking at, not out to the world
+  await page.click('#zoomReset');
+  await new Promise((r) => setTimeout(r, 600));
+  assert.ok(Math.abs((await zoom()) - fitted) < 0.5, 'reset re-fits the open country');
+  assert.equal(await page.$$eval('path.sub', (p) => p.length), 81);
+  assert.deepEqual(page.errors, []);
+  await close(page);
+});
+
+test('a marked country is not painted under its own provinces', async () => {
+  const page = await open('?lang=tr');
+  await clickCountry(page, 'TR');
+  await page.waitForFunction(() => document.querySelector('path[data-code=TR]').classList.contains('lv2'));
+  const painted = await stableFill(page, 'path[data-code=TR]');
+
+  await openTurkey(page);
+  const land = await stableFill(page, 'path[data-code=DE]');
+  await page.waitForFunction(
+    (plain) => getComputedStyle(document.querySelector('path[data-code=TR]')).fill === plain,
+    {}, land
+  ).catch(() => { throw new Error('the country is still painted under its provinces'); });
+  assert.notEqual(land, painted, 'and plain land is not the marked colour');
+
+  // and it gets its colour back on the way out
+  await page.evaluate(() => document.getElementById('crumbBack').click());
+  await page.waitForFunction(
+    (green) => getComputedStyle(document.querySelector('path[data-code=TR]')).fill === green,
+    {}, painted
+  ).catch(() => { throw new Error('the country did not get its colour back'); });
+  assert.deepEqual(page.errors, []);
+  await close(page);
+});
+
 test('provinces survive a reload and travel in the link', async () => {
   const page = await open('?lang=tr');
   await openTurkey(page);
@@ -401,34 +477,29 @@ test('provinces survive a reload and travel in the link', async () => {
   await close(other);
 });
 
-test('the city layer marks from the map, the list and a link', async () => {
+test('a city is marked from the search list, dots the map and travels in the link', async () => {
   const page = await open('?lang=tr');
   const before = await page.evaluate(() => performance.getEntriesByType('resource').some((r) => r.name.includes('cities.js')));
   assert.equal(before, false, 'cities are not part of the first load');
 
-  await page.click('#viewCities');
-  await page.waitForSelector('circle.city');
-  const shown = await page.$$eval('circle.city:not(.faint)', (c) => c.length);
-  const all = await page.$$eval('circle.city', (c) => c.length);
-  assert.ok(all > 5000, `every city is in the layer (${all})`);
-  assert.ok(shown > 300 && shown < 1200, `only the big ones show at world zoom (${shown})`);
-
-  // from the map
-  const point = await page.evaluate(() => {
-    const dot = [...document.querySelectorAll('circle.city:not(.faint)')][3];
-    const r = dot.getBoundingClientRect();
-    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
-  });
-  await page.mouse.click(point.x, point.y);
-  await page.waitForFunction(() => document.getElementById('count').textContent === '1');
-
-  // from the list, through search
+  // typing a city name offers it under the countries
   await page.type('#search', 'istanbul');
-  await page.waitForFunction(() => document.querySelectorAll('.row').length === 1);
-  assert.equal(await page.$eval('.row .nm', (e) => e.textContent), 'Istanbul');
-  await page.click('.row');
-  await page.waitForFunction(() => document.getElementById('count').textContent === '2');
+  await page.waitForSelector('.row.city-row');
+  assert.equal(await page.$eval('.row.city-row .nm', (e) => e.textContent), 'Istanbul, Türkiye');
+
+  await page.click('.row.city-row');
+  await page.waitForFunction(() => document.querySelectorAll('#citymarks circle').length === 1);
+  assert.equal(await text(page, '#cityCount'), '1');
   assert.match(await text(page, '#scoreSub'), /şehir/);
+
+  // the point of the whole thing: the city is painted, the country is not
+  assert.equal(await text(page, '#count'), '0', 'a city does not tick its country');
+  assert.equal(
+    await page.$eval('path[data-code=TR]', (e) => /\blv\d\b/.test(e.getAttribute('class'))),
+    false, 'the country under it stays unpainted'
+  );
+  const dot = await page.$eval('#citymarks circle', (c) => ({ cls: c.getAttribute('class'), id: c.dataset.city }));
+  assert.match(dot.cls, /\bon\b.*\blv2\b/, 'the dot carries the brush level');
 
   const link = await page.evaluate(() => {
     document.getElementById('shareBtn').click();
@@ -438,39 +509,55 @@ test('the city layer marks from the map, the list and a link', async () => {
   assert.ok(link.length < 200, `and stays pasteable (${link.length} chars)`);
 
   const other = await open(`?lang=tr${link}`);
-  await other.click('#viewCities');
-  await other.waitForSelector('circle.city');
-  assert.equal(await text(other, '#count'), '2', 'the link brings both cities to a fresh browser');
+  await other.waitForFunction(() => document.querySelectorAll('#citymarks circle').length === 1);
+  assert.equal(await other.$eval('#citymarks circle', (c) => c.dataset.city), dot.id, 'the same city in a fresh browser');
   assert.deepEqual(page.errors, []);
+  assert.deepEqual(other.errors, []);
   await close(page);
   await close(other);
 });
 
-test('the city layer and a country detail take turns', async () => {
+test('a city answers to its name in the visitor’s language', async () => {
   const page = await open('?lang=tr');
+  await page.type('#search', 'roma');
+  await page.waitForSelector('.row.city-row');
+  assert.equal(await page.$eval('.row.city-row .nm', (e) => e.textContent), 'Roma, İtalya');
 
-  // from a country, turning cities on puts the provinces away
-  await openTurkey(page);
-  assert.equal(await page.$$eval('path.sub', (p) => p.length), 81);
-  await page.click('#viewCities');
-  await page.waitForSelector('circle.city');
-  assert.equal(await page.$$eval('path.sub', (p) => p.length), 0, 'the province layer stepped aside');
-  assert.equal(await page.$eval('#crumbs', (e) => e.hidden), true, 'and so did its breadcrumb');
+  // only the language in use is fetched — not all eleven name packs
+  const packs = await page.evaluate(() =>
+    performance.getEntriesByType('resource').filter((r) => r.name.includes('/cities/')).map((r) => r.name.split('/').pop().split('?')[0])
+  );
+  assert.deepEqual(packs, ['tr.js']);
 
-  // countries are out of reach while cities are the subject — no accidental ticks
-  assert.equal(await page.$eval('path[data-code=TR]', (e) => getComputedStyle(e).pointerEvents), 'none');
+  // and the name GeoNames ships still works, showing the Turkish one
+  await page.evaluate(() => {
+    const box = document.getElementById('search');
+    box.value = '';
+    box.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await page.type('#search', 'rome');
+  await page.waitForFunction(() => document.querySelector('.row.city-row .nm')?.textContent === 'Roma, İtalya');
+  assert.deepEqual(page.errors, []);
+  await close(page);
+});
 
-  // turning cities off hands the map back to the countries
-  await page.click('#viewCities');
-  await page.waitForFunction(() => !document.querySelector('circle.city'));
-  await clickCountry(page, 'TR');
-  await page.waitForSelector('.flash-into');
-  assert.match(await text(page, '.flash-into'), /81/);
-  // clicked through the DOM: the strip is a transient overlay and a real mouse
-  // click can land on whatever slides in over it
-  await page.evaluate(() => document.querySelector('.flash-into').click());
-  await page.waitForSelector('path.sub');
-  assert.equal(await text(page, '#crumbName'), 'Türkiye');
+test('a city survives a reload and clears with the map', async () => {
+  const page = await open('?lang=tr');
+  await page.type('#search', 'izmir');
+  await page.waitForSelector('.row.city-row');
+  await page.click('.row.city-row');
+  await page.waitForFunction(() => document.querySelectorAll('#citymarks circle').length === 1);
+
+  await page.reload({ waitUntil: 'networkidle0' });
+  await page.waitForFunction(() => document.querySelectorAll('#citymarks circle').length === 1, { timeout: 10000 });
+  assert.equal(await text(page, '#cityCount'), '1', 'the city came back from storage');
+
+  // the same row unmarks it — one list, one brush, both directions
+  await page.type('#search', 'izmir');
+  await page.waitForSelector('.row.city-row.on');
+  await page.click('.row.city-row');
+  await page.waitForFunction(() => document.querySelectorAll('#citymarks circle').length === 0);
+  assert.equal(await page.$eval('#cityStat', (e) => e.hidden), true, 'and the score line drops the counter');
   assert.deepEqual(page.errors, []);
   await close(page);
 });

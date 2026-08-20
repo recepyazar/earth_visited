@@ -33,11 +33,15 @@ Inspired by [turkeyvisited](https://ozanyerli.github.io/turkeyvisited/), but for
   US states, Japan's prefectures and so on. Open one from the chevron in the list or the shortcut on the tap
   strip; the map zooms in, the list becomes the provinces, and the same four levels apply. The counter reads
   `12/81`, `‹ World` takes you back, and each country's geometry is fetched only when you open it (Türkiye is
-  50 KB).
-- **Cities** — a pin button turns the world map into 6,241 cities over 100,000 people. Only the biggest show
-  at world zoom and the threshold drops as you zoom in, so the map never becomes a smear. Mark them from the
-  map or from a searchable list, and the score reads “128 cities · in 34 countries”. The layer is fetched
-  only when you ask for it (113 KB over the wire).
+  50 KB). The detail layer is 1:10m, so an open country zooms far deeper than the world map's 24x, the reset
+  button re-fits the country rather than jumping back out, and the country's own fill steps aside while you
+  are inside it.
+- **Cities** — type a city into the same search box and it appears under the countries, `İzmir, Türkiye`.
+  Marking one paints a dot on the world map instead of colouring the whole country, so a single trip to Rome
+  does not claim all of Italy. Cities answer to their name in your language — “Roma”, “Viyana”, “Москва” —
+  as well as the one GeoNames ships. Only the cities you have marked are drawn, the score line gains
+  “· 3 cities”, and the 6,241-city index (114 KB over the wire, plus 4–26 KB for your language) is fetched
+  the first time you search for one.
 - **Progress by region** — Africa, Americas, Asia, Europe, Oceania.
 - **Twelve languages** — English, Türkçe, Deutsch, Español, Français, Italiano, Português, Русский, 中文,
   العربية, 日本語, 한국어, for both the interface and the country names; search matches any of them, so typing
@@ -119,7 +123,8 @@ manifest.json       PWA manifest
 sw.js               service worker: precaches the shell, caches the globe on demand
 assets/icons/       app icons (192, 512, maskable, apple-touch)
 js/admin1/          GENERATED — one file per country with a province layer, plus a tiny index
-js/cities.js        GENERATED — the city layer, loaded on demand
+js/cities.js        GENERATED — city index, loaded the first time you search a city
+js/cities/<lang>.js GENERATED — city names in that language, only the one in use is fetched
 tools/gen.mjs       regenerates js/data.js
 tools/gen-admin1.mjs regenerates js/admin1/ from Natural Earth 1:10m admin-1
 tools/gen-cities.mjs regenerates js/cities.js from GeoNames cities15000
@@ -190,11 +195,20 @@ npm run build:cities            # add --refresh to re-download the 3 MB source
 
 GeoNames' cities15000 holds 34,000 places; we keep the 6,241 over 100,000 people, project them with the map's
 own projection and store each as an id, a name, a country, integer coordinates and a population in thousands
-(393 KB, 113 KB gzipped). Ids are GeoNames ids, ordered, because the share link counts positions against them.
+(393 KB, 114 KB gzipped). Ids are GeoNames ids, ordered, because the share link counts positions against them.
 
-Each mode marks one kind of thing: with cities on, countries dim and stop taking clicks, so a stray tap cannot
-quietly tick a country while you are collecting cities. Opening a country's provinces puts the cities away,
-and vice versa.
+Names come from `alternateNamesV2` — 200 MB downloaded once into `.cache/`, streamed rather than read, and
+filtered down to our twelve languages. They ship as one small file per language in `js/cities/`, keyed by
+position in the city array, holding only the names that actually differ from the original: Turkish is 398
+names and 4 KB gzipped, Russian 3,941 and 26 KB. All twelve in one file would have cost 150 KB extra, so the
+app fetches only the language in use — and still searches the original name, so “Rome” and “Roma” both find
+the same city.
+
+Cities are not a mode: they are the same list and the same brush as everything else. Searching for one loads
+the index, marking one draws a dot into `#citymarks` — only marked cities are ever in the DOM, which is why
+the layer costs nothing at world zoom — and the dot is sized in screen pixels so it stays a dot as you zoom.
+A city never marks its country: they are counted separately, and the country under a marked city stays
+unpainted unless you tick it yourself.
 
 ## Why the flag webfont
 

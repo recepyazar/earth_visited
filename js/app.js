@@ -15,6 +15,10 @@
   const DOT_AREA = 6; // entities smaller than this get a clickable dot
   const DRAG_SLOP = 4; // px of movement before a press counts as a pan, not a tap
   const MAX_ZOOM = 24; // past this the 1:50m coastlines run out of detail
+  // an open country is drawn from 1:10m geometry, which holds up much closer — and
+  // fitting a small country to the panel can already cost more than 24x
+  const DETAIL_ZOOM = 160;
+  const maxZoom = () => (detail ? DETAIL_ZOOM : MAX_ZOOM);
 
   const W = WORLD.w;
   const H = WORLD.h;
@@ -72,7 +76,6 @@
   let mode = 'map'; // which view is on screen: 'map' | 'globe'
   const subMarks = new Map(); // 'TR-34' -> level, provinces of every country
   const cityMarks = new Map(); // geonameid -> level
-  let cityLayer = null; // { data, byId, group, tier } while the city layer is on
   let detail = null; // { code, units, byId, box, group } while a country is open
   let globeLoading = null; // promise while the globe bundle is loading
   let cardSize = 'link';
@@ -332,18 +335,11 @@
     for (const dot of map.querySelectorAll('#dots circle')) dot.setAttribute('r', dotR);
     for (const hit of map.querySelectorAll('#hits circle')) hit.setAttribute('r', hitR);
 
-    if (cityLayer) {
-      // city coordinates live at their own scale, so the radius has to be divided
-      // by it as well as by the zoom
-      const r = Math.min(9, 3.2 / pxPerUnit) * cityLayer.data.scale;
-      for (const { dot } of cityLayer.byId.values()) dot.setAttribute('r', r);
-      const tier = tierFor(view.k);
-      if (tier !== cityLayer.tier) {
-        cityLayer.tier = tier;
-        for (const { city, dot } of cityLayer.byId.values()) {
-          dot.classList.toggle('faint', city.p < tier && !cityMarks.has(city.i));
-        }
-      }
+    if (cityData && cityGroup) {
+      // city coordinates live at their own scale, so the radius is divided by that
+      // as well as by the zoom
+      const r = Math.min(9, 3.4 / pxPerUnit) * cityData.scale;
+      for (const dot of cityGroup.children) dot.setAttribute('r', r);
     }
   }
 
@@ -355,7 +351,7 @@
   }
 
   function zoomAt(px, py, factor) {
-    const k = Math.min(MAX_ZOOM, Math.max(1, view.k * factor));
+    const k = Math.min(maxZoom(), Math.max(1, view.k * factor));
     if (k === view.k) return;
     view.x = px - ((px - view.x) * k) / view.k;
     view.y = py - ((py - view.y) * k) / view.k;
@@ -408,7 +404,7 @@
         const [a, b] = [...pointers.values()];
         const dist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
         const mid = svgPoint({ clientX: (a.clientX + b.clientX) / 2, clientY: (a.clientY + b.clientY) / 2 });
-        const target = Math.min(MAX_ZOOM, Math.max(1, (pinchStart.k * dist) / pinchStart.dist));
+        const target = Math.min(maxZoom(), Math.max(1, (pinchStart.k * dist) / pinchStart.dist));
         zoomAt(mid.x, mid.y, target / view.k);
         dragged = 99;
         return;
@@ -451,21 +447,21 @@
     $('zoomOut').onclick = () => (mode === 'globe' ? Globe.zoomBy(1 / 1.5) : zoomAt(W / 2, H / 2, 1 / 1.6));
     $('zoomReset').onclick = () => {
       if (mode === 'globe') return Globe.reset();
-      view.k = 1;
-      view.x = view.y = 0;
-      applyView();
+      // back to what the view is about: the open country, the chosen continent,
+      // or the whole world
+      focusBox(detail ? detail.box : activeRegion ? REGION_BOX[activeRegion] : null);
     };
   }
 
   /* ---------------- interaction ---------------- */
   function onMapHover(e) {
     const cityId = e.target.dataset && e.target.dataset.city;
-    if (cityId && cityLayer) {
-      const entry = cityLayer.byId.get(+cityId);
-      if (!entry) return hideTip();
-      const country = byCode.get(entry.city.c);
+    if (cityId && cityData) {
+      const city = cityData.byId.get(+cityId);
+      if (!city) return hideTip();
+      const country = byCode.get(city.c);
       const rect = mapwrap.getBoundingClientRect();
-      tip.replaceChildren(`${entry.city.n}${country ? `, ${nameOf(country)}` : ''}`);
+      tip.replaceChildren(`${cityName(city)}${country ? `, ${nameOf(country)}` : ''}`);
       tip.hidden = false;
       tip.style.left = `${e.clientX - rect.left}px`;
       tip.style.top = `${e.clientY - rect.top}px`;
@@ -564,59 +560,7 @@
   }
 
   /* ---------------- list ---------------- */
-  const CITY_ROWS = 250; // 6,241 rows would be a slow, useless wall; search reaches the rest
-
-  // the biggest cities plus everything marked, and whatever the search turns up
-  function citiesToList(needle) {
-    const all = cityLayer.data.c;
-    if (needle) {
-      const hits = [];
-      for (const city of all) {
-        if (fold(city.n).includes(needle) || city.c.toLowerCase() === needle) hits.push(city);
-        if (hits.length >= CITY_ROWS) break;
-      }
-      return hits;
-    }
-    const marked = all.filter((c) => cityMarks.has(c.i));
-    const rest = [...all].sort((a, b) => b.p - a.p).filter((c) => !cityMarks.has(c.i));
-    return [...marked, ...rest.slice(0, Math.max(0, CITY_ROWS - marked.length))];
-  }
-
-  function buildCityList() {
-    const needle = fold($('search').value.trim());
-    const rows = citiesToList(needle);
-    const frag = document.createDocumentFragment();
-    for (const city of rows) {
-      const country = byCode.get(city.c);
-      const row = document.createElement('button');
-      row.type = 'button';
-      row.className = 'row';
-      row.dataset.code = `c${city.i}`;
-      row.innerHTML = '<span class="box"></span><span class="flag"></span><span class="nm"></span><span class="tag pop"></span>';
-      row.querySelector('.flag').replaceWith(country ? flagNode(country) : document.createElement('span'));
-      row.querySelector('.nm').textContent = city.n;
-      row.querySelector('.pop').textContent = `${compact(city.p * 1000)}`;
-      row.onclick = () => toggleCity(city.i);
-      row.onmouseenter = () => cityLayer.byId.get(city.i)?.dot.classList.add('hl');
-      row.onmouseleave = () => cityLayer.byId.get(city.i)?.dot.classList.remove('hl');
-      els[`c${city.i}`] = Object.assign(els[`c${city.i}`] || {}, { row });
-      frag.appendChild(row);
-      paintCity(city.i);
-    }
-    const headSel = document.createElement('div');
-    headSel.className = 'lhead sel';
-    headSel.id = 'headSel';
-    const headRest = document.createElement('div');
-    headRest.className = 'lhead';
-    headRest.id = 'headRest';
-    list.replaceChildren(headSel, frag, headRest);
-    const on = rows.filter((c) => cityMarks.has(c.i)).length;
-    updateHeads(on, rows.length - on);
-    showEmpty(!rows.length);
-  }
-
   function buildList() {
-    if (cityLayer) return buildCityList();
     if (detail) return buildDetailList();
     const frag = document.createDocumentFragment();
     const sorted = [...FEATURES].sort((a, b) => nameOf(a).localeCompare(nameOf(b), lang));
@@ -703,7 +647,6 @@
       .replace(/ı/g, 'i');
 
   function filterList(q) {
-    if (cityLayer) return buildCityList();
     const needle = fold(q.trim());
     let onShown = 0;
     let offShown = 0;
@@ -729,7 +672,62 @@
       if (hit) (marks.has(f.c) ? onShown++ : offShown++);
     }
     updateHeads(onShown, offShown);
-    showEmpty(!onShown && !offShown);
+    showEmpty(!onShown && !offShown && !list.querySelector('.row.city-row:not([hidden])'));
+    showCityMatches(needle);
+  }
+
+  const CITY_MATCHES = 40; // enough to find what you meant, short enough to scan
+
+  // Cities live in the same list as the countries, but only while searching: a
+  // country is a thing you scroll to, a city is a thing you look up.
+  async function showCityMatches(needle) {
+    for (const row of list.querySelectorAll('.row.city-row')) row.remove();
+    if (detail || needle.length < 2) return;
+    const data = await ensureCities();
+    await ensureCityNames(lang); // "Roma" and "Rome" both have to work
+    if (!data || fold($('search').value.trim()) !== needle) return; // the query moved on
+
+    // "ist" should offer Istanbul before Bristol: names that start with the query
+    // come first, then the bigger city
+    const hits = [];
+    for (const city of data.c) {
+      const local = cityName(city);
+      let at = fold(local).indexOf(needle);
+      if (at !== 0 && local !== city.n) {
+        const other = fold(city.n).indexOf(needle);
+        if (at < 0 || other === 0) at = other;
+      }
+      if (at === 0) hits.push({ city, rank: 0 });
+      else if (at > 0) hits.push({ city, rank: 1 });
+    }
+    if (!hits.length) return;
+    hits.sort((a, b) => a.rank - b.rank || b.city.p - a.city.p);
+    const top = hits.slice(0, CITY_MATCHES).map((h) => h.city);
+
+    const head = document.createElement('div');
+    head.className = 'lhead city-row';
+    head.textContent = t('cities');
+    const frag = document.createDocumentFragment();
+    frag.appendChild(head);
+    for (const city of top) {
+      const country = byCode.get(city.c);
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'row city-row';
+      row.dataset.code = `c${city.i}`;
+      const lv = cityMarks.get(city.i) || 0;
+      row.classList.toggle('on', lv > 0);
+      if (lv) row.classList.add(`lv${lv}`);
+      row.innerHTML = '<span class="box"></span><span class="flag"></span><span class="nm"></span><span class="tag pop"></span>';
+      row.querySelector('.flag').replaceWith(country ? flagNode(country) : document.createElement('span'));
+      row.querySelector('.nm').textContent = `${cityName(city)}${country ? `, ${nameOf(country)}` : ''}`;
+      row.querySelector('.pop').textContent = compact(city.p * 1000);
+      row.onclick = () => toggleCity(city.i);
+      els[`c${city.i}`] = Object.assign(els[`c${city.i}`] || {}, { row });
+      frag.appendChild(row);
+    }
+    list.appendChild(frag);
+    showEmpty(false);
   }
 
   function showEmpty(nothing) {
@@ -792,7 +790,7 @@
       view.x = view.y = 0;
     } else {
       const [x0, y0, x1, y1] = box;
-      const k = Math.min(MAX_ZOOM, Math.max(1, Math.min(W / (x1 - x0), H / (y1 - y0))));
+      const k = Math.min(maxZoom(), Math.max(1, Math.min(W / (x1 - x0), H / (y1 - y0))));
       view.k = k;
       view.x = W / 2 - ((x0 + x1) / 2) * k;
       view.y = H / 2 - ((y0 + y1) / 2) * k;
@@ -804,22 +802,6 @@
 
   /* ---------------- score ---------------- */
   function updateScore() {
-    if (cityLayer) {
-      const countries = new Set();
-      const perLevel = { 1: 0, 2: 0, 3: 0, 4: 0 };
-      for (const [id, lv] of cityMarks) {
-        const entry = cityLayer.byId.get(id);
-        if (!entry) continue;
-        perLevel[lv]++;
-        countries.add(entry.city.c);
-      }
-      $('count').textContent = cityCount();
-      $('total').textContent = '';
-      $('scoreSub').textContent = `${t('cities')} · ${t('citiesIn').replace('{n}', countries.size)}`;
-      lastCounts = perLevel;
-      renderBrush(perLevel);
-      return;
-    }
     if (detail) {
       const done = detailCount();
       const total = detail.units.length;
@@ -840,6 +822,8 @@
     }
     const s = stats();
     $('count').textContent = s.sov;
+    $('cityCount').textContent = cityCount();
+    $('cityStat').hidden = !cityCount();
     $('total').textContent = `/ ${SOVEREIGN_TOTAL}`;
     $('terr').textContent = s.terr;
     $('pct').textContent = withPct(s.pct);
@@ -935,7 +919,6 @@
 
   async function openDetail(code) {
     if (!hasDetail(code)) return;
-    if (cityLayer) closeCities(); // one layer at a time keeps the list honest
     // the globe has no province layer, so opening one takes you back to the flat map
     // rather than leaving the control dead
     if (mode === 'globe') await setView('map');
@@ -1074,120 +1057,122 @@
   const detailCount = () => (detail ? detail.units.filter((u) => subMarks.has(u.c)).length : 0);
 
   /* ---------------- cities ---------------- */
+  // Cities are not a mode of their own any more: the ones you have marked are drawn
+  // on the world map as coloured dots, so a country is not painted whole just
+  // because you saw one of its cities. The dataset loads the first time it is
+  // needed — a search, a link, or marks restored from storage.
+  let cityData = null;
+  let cityLoading = null;
+  let cityGroup = null;
+
+  // GeoNames names cities in English or in their own language, so a Turkish
+  // visitor typing "Roma" would never find Rome. The names for one language are a
+  // few kilobytes; all twelve would be 150, so each is a file of its own and only
+  // the one in use is fetched.
+  const cityNamePacks = new Map();
+  function ensureCityNames(lang) {
+    if (lang === 'en') return Promise.resolve(null);
+    if (!cityNamePacks.has(lang)) {
+      cityNamePacks.set(
+        lang,
+        loadScript(`js/cities/${lang}.js?${ASSET_V}`)
+          .then(() => (window.CITY_NAMES || {})[lang] || null)
+          .catch(() => null)
+      );
+    }
+    return cityNamePacks.get(lang);
+  }
+
+  // the name to show and to search: the visitor's language when we have it
+  function cityName(city) {
+    const pack = (window.CITY_NAMES || {})[lang];
+    return (pack && pack[city.ix]) || city.n;
+  }
+
+  function ensureCities() {
+    if (cityData) return Promise.resolve(cityData);
+    if (!cityLoading) {
+      cityLoading = loadScript(`js/cities.js?${ASSET_V}`)
+        .then(() => ensureCityNames(lang))
+        .then(() => {
+          cityData = window.CITIES;
+          cityData.c.forEach((c, i) => (c.ix = i)); // the name packs are keyed by position
+          cityData.byId = new Map(cityData.c.map((c) => [c.i, c]));
+          return cityData;
+        })
+        .catch(() => {
+          cityLoading = null;
+          return null;
+        });
+    }
+    return cityLoading;
+  }
+
   async function applyPendingCities() {
     if (!pendingCities) return;
-    if (!window.CITIES) {
-      const ok = await loadScript(`js/cities.js?${ASSET_V}`).then(() => true).catch(() => false);
-      if (!ok) return;
-    }
+    const data = await ensureCities();
+    if (!data) return;
     const list = Share.decodeCities(cityOrder(), pendingCities);
     pendingCities = null;
     if (!list || !list.length) return;
     cityMarks.clear();
     for (const [id, lv] of list) cityMarks.set(id, lv);
     save();
-    if (cityLayer) {
-      for (const id of cityLayer.byId.keys()) paintCity(id);
-      buildList();
-      updateScore();
-    }
+    drawCities();
+    updateScore();
   }
 
-  // Dots are drawn for every city we ship, but only a tier of them is shown at a
-  // time: the whole world at once would be a smear, so the population threshold
-  // drops as you zoom in.
-  const CITY_TIERS = [
-    { from: 0, pop: 1000 },
-    { from: 2.5, pop: 500 },
-    { from: 5, pop: 200 },
-    { from: 9, pop: 100 },
-  ];
-  const tierFor = (k) => CITY_TIERS.reduce((acc, t) => (k >= t.from ? t.pop : acc), CITY_TIERS[0].pop);
-
-  async function toggleCities() {
-    if (cityLayer) return closeCities();
-    if (detail) closeDetail();
-    if (mode === 'globe') await setView('map');
-    if (!window.CITIES) {
-      toast(t('loadingCities'));
-      const ok = await loadScript(`js/cities.js?${ASSET_V}`).then(() => true).catch(() => false);
-      if (!ok) return toast(t('copyFail'));
+  // only the marked ones are ever in the DOM, which is what keeps this cheap
+  function drawCities() {
+    if (!cityGroup) {
+      cityGroup = document.createElementNS(SVG_NS, 'g');
+      cityGroup.setAttribute('id', 'citymarks');
+      scene.appendChild(cityGroup);
     }
-
-    const data = window.CITIES;
-    const group = document.createElementNS(SVG_NS, 'g');
-    group.setAttribute('id', 'cities');
-    group.setAttribute('transform', `scale(${1 / data.scale})`);
-    const byId = new Map();
-    for (const city of data.c) {
+    if (!cityData) return;
+    cityGroup.setAttribute('transform', `scale(${1 / cityData.scale})`);
+    cityGroup.replaceChildren();
+    for (const [id, lv] of cityMarks) {
+      const city = cityData.byId.get(id);
+      if (!city) continue;
       const dot = document.createElementNS(SVG_NS, 'circle');
       dot.setAttribute('cx', city.x);
       dot.setAttribute('cy', city.y);
-      dot.setAttribute('class', 'city');
-      dot.dataset.city = city.i;
-      group.appendChild(dot);
-      byId.set(city.i, { city, dot });
+      dot.setAttribute('class', `city on lv${lv}`);
+      dot.dataset.city = id;
+      cityGroup.appendChild(dot);
     }
-    scene.appendChild(group);
-    cityLayer = { data, byId, group, tier: null };
-    if (!worldSubtitle) worldSubtitle = $('scoreSub').innerHTML;
-    document.body.classList.add('in-cities');
-    $('viewCities').classList.add('on');
-    for (const id of byId.keys()) paintCity(id);
     sizeMarkers();
-    $('search').value = '';
-    $('search').placeholder = t('searchCity');
-    buildList();
-    updateScore();
   }
 
-  function closeCities() {
-    if (!cityLayer) return;
-    cityLayer.group.remove();
-    cityLayer = null;
-    document.body.classList.remove('in-cities');
-    $('viewCities').classList.remove('on');
-    $('search').value = '';
-    $('search').placeholder = t('search');
-    if (worldSubtitle) $('scoreSub').innerHTML = worldSubtitle;
-    applyLang();
-  }
-
-  function paintCity(id) {
-    const entry = cityLayer && cityLayer.byId.get(id);
-    if (!entry) return;
-    const lv = cityMarks.get(id) || 0;
-    entry.dot.classList.toggle('on', lv > 0);
-    for (const l of LEVELS) entry.dot.classList.toggle(`lv${l.id}`, lv === l.id);
-    const row = els[`c${id}`] && els[`c${id}`].row;
-    if (row) {
-      row.classList.toggle('on', lv > 0);
-      for (const l of LEVELS) row.classList.toggle(`lv${l.id}`, lv === l.id);
-      row.setAttribute('aria-pressed', String(lv > 0));
-    }
-  }
-
-  function toggleCity(id) {
-    if (!cityLayer || !cityLayer.byId.has(id)) return;
+  async function toggleCity(id) {
+    const data = await ensureCities();
+    if (!data || !data.byId.has(id)) return;
     const next = cityMarks.get(id) === brush ? 0 : brush;
     if (next) cityMarks.set(id, next);
     else cityMarks.delete(id);
-    paintCity(id);
+    drawCities();
     flashCity(id, next);
+    const row = els[`c${id}`] && els[`c${id}`].row;
+    if (row) {
+      row.classList.toggle('on', next > 0);
+      for (const l of LEVELS) row.classList.toggle(`lv${l.id}`, next === l.id);
+      row.setAttribute('aria-pressed', String(next > 0));
+    }
     updateScore();
-    updateHeads();
     save();
     $('hint').classList.add('gone');
   }
 
   function flashCity(id, state) {
-    const entry = cityLayer && cityLayer.byId.get(id);
-    if (!entry) return;
+    const city = cityData && cityData.byId.get(id);
+    if (!city) return;
     const el = $('flash');
-    const country = byCode.get(entry.city.c);
+    const country = byCode.get(city.c);
     const name = document.createElement('b');
-    name.textContent = `${entry.city.n}${country ? `, ${nameOf(country)}` : ''}`;
-    el.replaceChildren(country ? flagNode(country, 'flag tipflag') : document.createComment(''), name);
+    name.textContent = `${cityName(city)}${country ? `, ${nameOf(country)}` : ''}`;
+    el.replaceChildren(name);
+    if (country) el.prepend(flagNode(country, 'flag tipflag'));
     if (state !== undefined) {
       const tag = document.createElement('span');
       tag.className = state ? `on lv${state}` : 'off';
@@ -1200,11 +1185,12 @@
   }
 
   const cityCount = () => cityMarks.size;
+  const cityOrder = () => (cityData ? cityData.c.map((c) => c.i) : window.CITIES ? CITIES.c.map((c) => c.i) : []);
 
   /* ---------------- globe ---------------- */
   // ?v= keeps a cached stylesheet from ever pairing with a newer script; bump it
   // in index.html and here together when deploying
-  const ASSET_V = 'v=12';
+  const ASSET_V = 'v=13';
   const GLOBE_FILES = [
     'js/vendor/d3-array-shim.js',
     'js/vendor/d3-geo.min.js',
@@ -1357,8 +1343,6 @@
   // one decimal below 10% so a single country still registers
   const withPct = (v) =>
     new Intl.NumberFormat(localeOf(), { style: 'percent', maximumFractionDigits: v < 10 ? 1 : 0 }).format(v / 100);
-
-  const cityOrder = () => (window.CITIES ? CITIES.c.map((c) => c.i) : []);
 
   function shareUrl() {
     const sub = Share.encodeSub(unitOrder(), subMarks);
@@ -1551,6 +1535,12 @@
     $('hint').textContent = mode === 'globe' ? t('hintGlobe') : matchMedia('(hover: none)').matches ? t('hintTouch') : t('hint');
     if (detail) $('crumbName').textContent = nameOf(byCode.get(detail.code));
     buildList();
+    // the city rows went with the list; they come back in the new language
+    if (cityData) {
+      const q = fold($('search').value.trim());
+      if (q.length >= 2) ensureCityNames(lang).then(() => showCityMatches(q));
+      drawCities();
+    }
     updateScore();
     if ($('settings').open) renderSettings();
     if ($('sheet').open) {
@@ -1664,6 +1654,7 @@
     for (const code of marks.keys()) paintShape(code);
     applyPendingSub();
     applyPendingCities();
+    if (cityMarks.size) ensureCities().then(drawCities); // marks restored from storage
 
     $('search').addEventListener('input', (e) => filterList(e.target.value));
     $('search').addEventListener('keydown', (e) => {
@@ -1676,7 +1667,7 @@
     });
     // two-step reset instead of a browser confirm(): the second tap does it
     $('resetBtn').onclick = () => {
-      if (cityLayer ? !cityCount() : detail ? !detailCount() : !marks.size && !subMarks.size && !cityMarks.size) return;
+      if (detail ? !detailCount() : !marks.size && !subMarks.size && !cityMarks.size) return;
       if (!resetArmed) {
         resetArmed = true;
         $('resetBtn').textContent = t('resetAsk');
@@ -1686,11 +1677,7 @@
         return;
       }
       disarmReset();
-      if (cityLayer) {
-        cityMarks.clear();
-        for (const id of cityLayer.byId.keys()) paintCity(id);
-        buildList();
-      } else if (detail) {
+      if (detail) {
         // inside a country, Reset means "this country's provinces", not the world
         for (const unit of detail.units) subMarks.delete(unit.c);
         for (const id of detail.byId.keys()) paintSub(id);
@@ -1707,7 +1694,6 @@
       save();
     };
     $('crumbBack').onclick = () => closeDetail();
-    $('viewCities').onclick = () => toggleCities();
     $('viewMap').onclick = () => setView('map');
     $('viewGlobe').onclick = () => setView('globe');
     if (mode === 'globe') {

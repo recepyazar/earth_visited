@@ -800,6 +800,14 @@ img.flag { width: 20px; height: 14px; object-fit: cover; border-radius: 2px; }
    strength: anywhere the finer layer falls short, the country itself shows through
    and the outline is the one the rest of the map draws. */
 .land.under { pointer-events: none; }
+/* With its provinces open, the country stops being painted: the two layers are
+   drawn at different resolutions, so a marked country used to leave a coloured
+   sliver everywhere the finer coastline fell short of the world map's. */
+.land.under, .land.under.on, .land.under:hover,
+.land.under.lv1, .land.under.lv2, .land.under.lv3, .land.under.lv4 {
+  fill: var(--land);
+  stroke: var(--border);
+}
 
 .crumbs {
   position: absolute;
@@ -876,13 +884,13 @@ body.in-detail #regionBlock { display: none; } /* filtering continents inside a 
 .city.lv2, .city.lv2:hover { fill: var(--lv2); }
 .city.lv3, .city.lv3:hover { fill: var(--lv3); }
 .city.lv4, .city.lv4:hover { fill: var(--lv4); }
-/* below the zoom's population threshold, and not marked: out of the way */
-.city.faint { display: none; }
-/* With cities on, the countries step back and stop taking clicks: each mode marks
-   one kind of thing, so a stray click cannot quietly tick a country instead. */
-body.in-cities .land.pickable { opacity: .55; pointer-events: none; }
-body.in-cities .hit, body.in-cities .dot { pointer-events: none; }
-body.in-cities .bar, body.in-cities .pct, body.in-cities .tiles { display: none; }
-body.in-cities #regionBlock { display: none; } /* the continent filter is about countries */
+/* only the cities you have marked are drawn, so they sit on top of everything */
+#citymarks { pointer-events: bounding-box; }
+.city { stroke-width: 1.5; }
+/* city results form their own block at the end of the list: a marked city should
+   not jump to the top of the countries above it */
+.lhead.city-row { order: 2; }
+.row.city-row, .row.city-row.on { order: 3; }
+.row.city-row .nm { font-weight: 500; }
 .row .tag.pop { font-variant-numeric: tabular-nums; }
 .city.hl { stroke: var(--accent); stroke-width: 3; }

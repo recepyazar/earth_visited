@@ -2,7 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { loadBrowserGlobals, WORLD, SHARE } from '../helpers.mjs';
 
-const CITIES = loadBrowserGlobals(['js/cities.js']).CITIES;
+const PACK_LANGS = ['tr', 'de', 'es', 'fr', 'it', 'pt', 'ru', 'zh', 'ar', 'ja', 'ko'];
+const loaded = loadBrowserGlobals(['js/cities.js', ...PACK_LANGS.map((l) => `js/cities/${l}.js`)]);
+const CITIES = loaded.CITIES;
+const NAMES = loaded.CITY_NAMES;
 const order = CITIES.c.map((c) => c.i);
 
 test('the city layer covers the world without being a phone book', () => {
@@ -39,6 +42,34 @@ test('cities land where their country is', () => {
   near('Istanbul', 'TR');
   near('Tokyo', 'JP');
   near('Buenos Aires', 'AR');
+});
+
+test('every language has its own names, keyed to the frozen city order', () => {
+  const at = (name) => CITIES.c.findIndex((c) => c.n === name);
+  for (const lang of PACK_LANGS) {
+    const pack = NAMES[lang];
+    assert.ok(pack, `${lang} has a pack`);
+    for (const key of Object.keys(pack)) {
+      const i = +key;
+      assert.ok(Number.isInteger(i) && CITIES.c[i], `${lang} key ${key} points at a city`);
+      assert.ok(pack[key].length, `${lang} ${key} is not empty`);
+      assert.notEqual(pack[key], CITIES.c[i].n, 'a name identical to the original is dead weight');
+    }
+  }
+  // the ones a Turkish visitor would actually type
+  assert.equal(NAMES.tr[at('Rome')], 'Roma');
+  assert.equal(NAMES.tr[at('Vienna')], 'Viyana');
+  assert.equal(NAMES.tr[at('Moscow')], 'Moskova');
+  assert.equal(NAMES.ru[at('Moscow')], 'Москва');
+  assert.match(NAMES.ja[at('Tokyo')], /^東京/);
+});
+
+test('a name pack stays small enough to fetch on a phone', () => {
+  for (const lang of PACK_LANGS) {
+    // escaped as \uXXXX on disk, a third of this over the wire once gzipped
+    const bytes = Buffer.byteLength(JSON.stringify(NAMES[lang]));
+    assert.ok(bytes < 130_000, `${lang} is ${Math.round(bytes / 1024)} KB`);
+  }
 });
 
 test('a handful of marked cities makes a link you can paste', () => {
