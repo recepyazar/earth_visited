@@ -150,8 +150,11 @@
 
   async function applyPendingSub() {
     if (!pendingSub) return;
-    const countries = [...new Set(pendingSub.split('.').map((s) => s.split('~')[0]))].filter(hasDetail);
-    await Promise.all(countries.map(loadDetail));
+    const countries = [...new Set(pendingSub.split('.').map((s) => s.split('~')[0]))];
+    // provinces of a country without a detail file of its own are numbered by the
+    // world layer, so that has to be here before the link can be read
+    if (countries.some((c) => !hasDetail(c))) await ensureWorldSubs();
+    await Promise.all(countries.filter(hasDetail).map(loadDetail));
     const list = Share.decodeSub(unitOrder(), pendingSub);
     pendingSub = null;
     if (!list || !list.length) return;
@@ -265,7 +268,7 @@
         els[f.c] = Object.assign(els[f.c] || {}, { hit });
         dotG.appendChild(dot);
         if (!shape) shape = dot;
-        else els[f.c] = { extra: dot };
+        else els[f.c] = Object.assign(els[f.c] || {}, { extra: dot });
       }
       if (shape) shape.dataset.code = f.c;
       els[f.c] = Object.assign(els[f.c] || {}, { shape });
@@ -282,14 +285,30 @@
   // whole of Germany is barely wider than Luxembourg's 18px circle. So a press on
   // one of those circles only counts as the micro-state when it lands on the dot
   // itself; otherwise the country underneath wins.
+  // A tap does not always land on the shape under the finger: Chrome hit-tests a
+  // touch as a rect and hands ambiguous ones to the container, which for a province
+  // the size of a fingernail means the <svg> itself. The point is the truth.
+  function subAt(e) {
+    const direct = e.target.dataset && e.target.dataset.sub;
+    if (direct) return direct;
+    const found = document
+      .elementsFromPoint(e.clientX, e.clientY)
+      .find((el) => el.dataset && el.dataset.sub);
+    return (found && found.dataset.sub) || null;
+  }
+
   function codeAt(target, x, y) {
     const code = target && target.dataset && target.dataset.code;
     if (!code || !target.classList.contains('hit')) return code || null;
     const dot = els[code] && els[code].extra;
     if (dot) {
+      // The hit circle is far wider than the dot it stands for. On a phone the whole
+      // world is 370 px across, so Cyprus sits five pixels from the middle of
+      // Anatolia — anything looser than the dot's own radius and a micro-state
+      // swallows taps meant for the country underneath it.
       const r = dot.getBoundingClientRect();
       const near = Math.hypot(x - (r.left + r.width / 2), y - (r.top + r.height / 2));
-      if (near <= Math.max(5, r.width * 0.75)) return code;
+      if (near <= Math.max(4, r.width / 2)) return code;
     } else {
       return code; // marker-only entity: the circle is all there is
     }
@@ -379,10 +398,7 @@
       // Remember what was under the finger/cursor: the toggle happens on pointerup,
       // because capturing the pointer for panning would retarget a later click event.
       pressCity = pointers.size === 1 ? (e.target.dataset && +e.target.dataset.city) || null : null;
-      // in the city view every spot on land belongs to a city, so a press anywhere
-      // picks the one whose area it fell in
-      if (!pressCity && mode === 'cities' && pointers.size === 1) pressCity = cityAt(e);
-      pressSub = pointers.size === 1 ? (e.target.dataset && e.target.dataset.sub) || null : null;
+      pressSub = pointers.size === 1 ? subAt(e) : null;
       pressCode = pointers.size === 1 && !pressSub && !(mode === 'cities') ? codeAt(e.target, e.clientX, e.clientY) : null;
       previewed = false;
       clearTimeout(pressTimer);
@@ -461,7 +477,7 @@
 
   /* ---------------- interaction ---------------- */
   function onMapHover(e) {
-    const cityId = (e.target.dataset && e.target.dataset.city) || (mode === 'cities' ? cityAt(e) : null);
+    const cityId = e.target.dataset && e.target.dataset.city;
     if (cityId && cityData) {
       const city = cityData.byId.get(+cityId);
       if (!city) return hideTip();
@@ -473,12 +489,14 @@
       tip.style.top = `${e.clientY - rect.top}px`;
       return;
     }
-    const sub = e.target.dataset && e.target.dataset.sub;
-    if (sub && detail) {
-      const entry = detail.byId.get(sub);
-      if (!entry) return hideTip();
+    const sub = subAt(e);
+    if (sub && (detail || mode === 'cities')) {
+      const unit = unitOf(sub);
+      if (!unit) return hideTip();
+      const country = !detail && byCode.get(subOwner.get(sub));
       const rect = mapwrap.getBoundingClientRect();
-      tip.replaceChildren(subNameOf(entry.unit));
+      // outside a country the province needs saying which country it is in
+      tip.replaceChildren(`${subNameOf(unit)}${country ? `, ${nameOf(country)}` : ''}`);
       tip.hidden = false;
       tip.style.left = `${e.clientX - rect.left}px`;
       tip.style.top = `${e.clientY - rect.top}px`;
@@ -535,8 +553,8 @@
     }
     el.hidden = false;
     clearTimeout(flashTimer);
-    // leave the "open provinces" shortcut on screen a little longer
-    flashTimer = setTimeout(() => (el.hidden = true), hasDetail(code) && !detail ? 3200 : state === undefined ? 1800 : 1400);
+    // the "open provinces" shortcut is a tap target, so it stays long enough to hit
+    flashTimer = setTimeout(() => (el.hidden = true), hasDetail(code) && !detail ? 5200 : state === undefined ? 1800 : 1400);
   }
 
   function toggle(code) {
@@ -622,26 +640,69 @@
   }
 
   // the same row UI, listing the open country's provinces instead of the world
-  // In the city view the list is about cities: the ones you have marked, and
+  // In the city view the list is about provinces: the ones you have marked, and
   // whatever the search box turns up beneath them.
   function buildCityList() {
-    const frag = document.createDocumentFragment();
     const needle = fold($('search').value.trim());
-    const marked = cityData
-      ? [...cityMarks.keys()].map((id) => cityData.byId.get(id)).filter(Boolean)
-      : [];
-    marked.sort((a, b) => cityName(a).localeCompare(cityName(b), lang));
+    const frag = document.createDocumentFragment();
+    const marked = [...subMarks.keys()].map(unitOf).filter(Boolean);
+    marked.sort((a, b) => subNameOf(a).localeCompare(subNameOf(b), lang));
     let shown = 0;
-    for (const city of marked) {
-      const country = byCode.get(city.c);
-      const label = fold(`${cityName(city)} ${city.n} ${country ? nameOf(country) : ''}`);
-      if (needle && !label.includes(needle)) continue;
-      frag.appendChild(cityRow(city));
+    for (const unit of marked) {
+      const country = byCode.get(subOwner.get(unit.c));
+      if (needle && !fold(`${subNameOf(unit)} ${unit.n} ${country ? nameOf(country) : ''}`).includes(needle)) continue;
+      frag.appendChild(subRow(unit));
       shown++;
     }
     list.replaceChildren(frag);
     showEmpty(!shown);
-    showCityMatches(needle);
+    showSubMatches(needle);
+  }
+
+  const SUB_MATCHES = 40;
+  // the same search box finds any province in the world, in any of our languages
+  function showSubMatches(needle) {
+    for (const row of list.querySelectorAll('.lhead.city-row, .row.city-row.found')) row.remove();
+    if (!worldSubs || needle.length < 2) return;
+    const hits = [];
+    for (const [country, units] of Object.entries(worldSubs.u)) {
+      for (const unit of units) {
+        if (subMarks.has(unit.c)) continue; // already listed above
+        const at = fold(`${subNameOf(unit)}\u0000${unit.n}`).indexOf(needle);
+        if (at >= 0) hits.push({ unit, country, rank: at === 0 ? 0 : 1 });
+      }
+    }
+    if (!hits.length) return;
+    hits.sort((a, b) => a.rank - b.rank || b.unit.a - a.unit.a);
+
+    const head = document.createElement('div');
+    head.className = 'lhead city-row';
+    head.textContent = t('provinces');
+    const frag = document.createDocumentFragment();
+    frag.appendChild(head);
+    for (const hit of hits.slice(0, SUB_MATCHES)) frag.appendChild(subRow(hit.unit, true));
+    list.appendChild(frag);
+    showEmpty(false);
+  }
+
+  function subRow(unit, found) {
+    const country = byCode.get(subOwner.get(unit.c));
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = found ? 'row city-row found' : 'row city-row';
+    row.dataset.code = unit.c;
+    const lv = subMarks.get(unit.c) || 0;
+    row.classList.toggle('on', lv > 0);
+    if (lv) row.classList.add(`lv${lv}`);
+    row.setAttribute('aria-pressed', String(lv > 0));
+    row.innerHTML = '<span class="box"></span><span class="flag"></span><span class="nm"></span>';
+    row.querySelector('.flag').replaceWith(country ? flagNode(country) : document.createElement('span'));
+    row.querySelector('.nm').textContent = `${subNameOf(unit)}${country ? `, ${nameOf(country)}` : ''}`;
+    row.onclick = () => toggleSub(unit.c);
+    row.onpointerenter = (e) => highlight(subPaths.get(unit.c) || [], true, e);
+    row.onpointerleave = () => highlight(subPaths.get(unit.c) || [], false);
+    els[unit.c] = Object.assign(els[unit.c] || {}, { row });
+    return row;
   }
 
   function cityRow(city, found) {
@@ -659,8 +720,8 @@
     row.querySelector('.nm').textContent = `${cityName(city)}${country ? `, ${nameOf(country)}` : ''}`;
     row.querySelector('.pop').textContent = compact(city.p * 1000);
     row.onclick = () => toggleCity(city.i);
-    row.onpointerenter = (e) => highlight([cellGroup && cellGroup.querySelector(`[data-city="${city.i}"]`)], true, e);
-    row.onpointerleave = () => highlight([cellGroup && cellGroup.querySelector(`[data-city="${city.i}"]`)], false);
+    row.onpointerenter = (e) => highlight([cityGroup && cityGroup.querySelector(`[data-city="${city.i}"]`)], true, e);
+    row.onpointerleave = () => highlight([cityGroup && cityGroup.querySelector(`[data-city="${city.i}"]`)], false);
     els[`c${city.i}`] = Object.assign(els[`c${city.i}`] || {}, { row });
     return row;
   }
@@ -885,16 +946,16 @@
       return;
     }
     if (mode === 'cities') {
-      // the score is about cities here, and the brush counts them too
-      const done = cityCount();
-      const total = cityData ? cityData.c.length : done;
+      // the score is about provinces here, and the brush counts them too
+      const done = subMarks.size;
+      const total = worldSubCount() || done;
       $('count').textContent = done;
       $('total').textContent = `/ ${total}`;
       $('pct').textContent = withPct((done / total) * 100);
       $('barfill').style.width = `${Math.min(100, (done / total) * 100)}%`;
-      $('scoreSub').textContent = `${t('cities')} · ${t('citiesIn').replace('{n}', cityCountries())}`;
+      $('scoreSub').textContent = `${t('provinces')} · ${t('citiesIn').replace('{n}', subCountries())}`;
       const perLevel = { 1: 0, 2: 0, 3: 0, 4: 0 };
-      for (const lv of cityMarks.values()) perLevel[lv]++;
+      for (const lv of subMarks.values()) perLevel[lv]++;
       lastCounts = perLevel;
       renderBrush(perLevel);
       return;
@@ -980,8 +1041,16 @@
   /* ---------------- provinces ---------------- */
   const hasDetail = (code) => !!(window.ADMIN1_INDEX && ADMIN1_INDEX[code]);
   // unit order per country, for the share link — filled as detail files load
-  const unitOrder = () =>
-    Object.fromEntries(Object.entries(window.ADMIN1 || {}).map(([c, d]) => [c, d.u.map((u) => u.c)]));
+  // The world layer and the per-country files hold the same units in the same order,
+  // so either can number them for the link; whichever is loaded wins.
+  const unitOrder = () => {
+    const order = {};
+    for (const [c, list] of Object.entries((window.ADMIN1_WORLD && ADMIN1_WORLD.u) || {})) {
+      order[c] = list.map((u) => u.c);
+    }
+    for (const [c, d] of Object.entries(window.ADMIN1 || {})) order[c] = d.u.map((u) => u.c);
+    return order;
+  };
   const detailFiles = {};
 
   function loadDetail(code) {
@@ -1040,6 +1109,7 @@
       path.setAttribute('class', 'sub');
       path.dataset.sub = unit.c;
       inner.appendChild(path);
+      register(unit.c, path);
       byId.set(unit.c, { unit, path });
     }
     scene.appendChild(group);
@@ -1059,6 +1129,7 @@
 
   function closeDetail() {
     if (!detail) return;
+    for (const { path } of detail.byId.values()) unregister(path);
     detail.group.remove();
     map.querySelector('defs')?.replaceChildren(); // the clip belonged to that country
     detail = null;
@@ -1087,11 +1158,11 @@
   }
 
   function paintSub(id) {
-    const entry = detail && detail.byId.get(id);
-    if (!entry) return;
     const lv = subMarks.get(id) || 0;
-    entry.path.classList.toggle('on', lv > 0);
-    for (const l of LEVELS) entry.path.classList.toggle(`lv${l.id}`, lv === l.id);
+    for (const path of subPaths.get(id) || []) {
+      path.classList.toggle('on', lv > 0);
+      for (const l of LEVELS) path.classList.toggle(`lv${l.id}`, lv === l.id);
+    }
     const row = els[id] && els[id].row;
     if (row) {
       row.classList.toggle('on', lv > 0);
@@ -1101,12 +1172,13 @@
   }
 
   function toggleSub(id) {
-    if (!detail || !detail.byId.has(id)) return;
+    if (!unitOf(id)) return;
     const next = subMarks.get(id) === brush ? 0 : brush;
     if (next) subMarks.set(id, next);
     else subMarks.delete(id);
     paintSub(id);
     flashSub(id, next);
+    if (mode === 'cities') buildList();
     updateScore();
     updateHeads();
     save();
@@ -1114,12 +1186,14 @@
   }
 
   function flashSub(id, state) {
-    const entry = detail && detail.byId.get(id);
-    if (!entry) return;
+    const unit = unitOf(id);
+    if (!unit) return;
     const el = $('flash');
     const name = document.createElement('b');
-    name.textContent = subNameOf(entry.unit);
+    name.textContent = subNameOf(unit);
+    const country = byCode.get(subOwner.get(id) || (detail && detail.code));
     el.replaceChildren(name);
+    if (country && !detail) el.prepend(flagNode(country, 'flag tipflag'));
     if (state !== undefined) {
       const tag = document.createElement('span');
       tag.className = state ? `on lv${state}` : 'off';
@@ -1132,7 +1206,8 @@
   }
 
 
-  const subNameOf = (unit) => (unit.L && unit.L[lang]) || unit.n;
+  const subNameOf = (unit) =>
+    (unit.at !== undefined && !unit.L ? worldSubName(unit) : null) || (unit.L && unit.L[lang]) || unit.n;
   const detailCount = () => (detail ? detail.units.filter((u) => subMarks.has(u.c)).length : 0);
 
   /* ---------------- cities ---------------- */
@@ -1198,7 +1273,6 @@
     for (const [id, lv] of list) cityMarks.set(id, lv);
     save();
     drawCities();
-    paintCells();
     updateScore();
   }
 
@@ -1225,63 +1299,90 @@
     sizeMarkers();
   }
 
-  /* ---------------- the city view ---------------- */
-  // No dataset draws the world's cities as areas, so every spot on land belongs to
-  // the city nearest to it, tessellated per country at build time (js/cityareas.js)
-  // and cut to each country's own outline here. A country whose cities you have not
-  // marked shows no colour at all — the map only fills in where you have been.
-  let areaData = null;
-  let areaLoading = null;
-  let cellGroup = null;
-  const cellOf = new Map(); // geonameid -> cell path data
+  /* ---------------- the city view: the world by its provinces ---------------- */
+  // Natural Earth's admin-1 units — Türkiye's 81 provinces, the 50 US states, and so
+  // on for every country — drawn straight onto the world map so each one can be
+  // marked on its own. They are the same units, in the same order, as the per-country
+  // files a country's detail view loads, so a province marked here is the same
+  // province there and travels in the same &p= link.
+  let worldSubs = null;
+  let worldSubsLoading = null;
+  let subGroup = null;
+  const subPaths = new Map(); // unit code -> the paths drawing it, in either layer
+  const subOwner = new Map(); // unit code -> its country
 
-  function ensureCityAreas() {
-    if (areaData) return Promise.resolve(areaData);
-    if (!areaLoading) {
-      areaLoading = ensureCities()
-        .then((cities) => (cities ? loadScript(`js/cityareas.js?${ASSET_V}`) : null))
+  function ensureWorldSubs() {
+    if (worldSubs) return Promise.resolve(worldSubs);
+    if (!worldSubsLoading) {
+      worldSubsLoading = Promise.all([
+        loadScript(`js/admin1/world.js?${ASSET_V}`),
+        ensureSubNames(lang),
+      ])
         .then(() => {
-          areaData = window.CITY_AREAS || null;
-          if (areaData) {
-            for (const list of Object.values(areaData.a)) {
-              for (const [index, d] of list) {
-                const city = cityData.c[index];
-                if (city) cellOf.set(city.i, d);
-              }
+          worldSubs = window.ADMIN1_WORLD || null;
+          if (worldSubs) {
+            for (const [code, list] of Object.entries(worldSubs.u)) {
+              list.forEach((unit, i) => {
+                unit.at = i; // the name packs are keyed by position
+                subOwner.set(unit.c, code);
+              });
             }
           }
-          return areaData;
+          return worldSubs;
         })
         .catch(() => {
-          areaLoading = null;
+          worldSubsLoading = null;
           return null;
         });
     }
-    return areaLoading;
+    return worldSubsLoading;
   }
 
-  // one group per country, clipped to that country's own shape: a Voronoi cell runs
-  // past the coast and over the border, and the clip is what makes it a country's
-  // city rather than a wedge of the sea
-  function buildMosaic() {
-    if (!areaData || cellGroup) return;
-    let defs = map.querySelector('defs#celldefs');
+  // one small file per language, like the city names: nobody downloads eleven
+  const subNamePacks = new Map();
+  function ensureSubNames(which) {
+    if (which === 'en') return Promise.resolve(null);
+    if (!subNamePacks.has(which)) {
+      subNamePacks.set(
+        which,
+        loadScript(`js/admin1/names/${which}.js?${ASSET_V}`)
+          .then(() => (window.SUB_NAMES || {})[which] || null)
+          .catch(() => null)
+      );
+    }
+    return subNamePacks.get(which);
+  }
+
+  // the detail layer carries its own translations; the world layer looks them up
+  function worldSubName(unit) {
+    const pack = (window.SUB_NAMES || {})[lang];
+    const country = subOwner.get(unit.c);
+    const named = pack && country && pack[country] && pack[country][unit.at];
+    return named || unit.n;
+  }
+
+  // A province is clipped to its own country's outline, exactly like the detail
+  // layer: the two are drawn from different sources and would otherwise disagree
+  // along the coast.
+  function buildSubLayer() {
+    if (!worldSubs || subGroup) return;
+    let defs = map.querySelector('defs#subdefs');
     if (!defs) {
       defs = document.createElementNS(SVG_NS, 'defs');
-      defs.id = 'celldefs';
+      defs.id = 'subdefs';
       map.insertBefore(defs, map.firstChild);
     }
-    cellGroup = document.createElementNS(SVG_NS, 'g');
-    cellGroup.setAttribute('id', 'citycells');
+    subGroup = document.createElementNS(SVG_NS, 'g');
+    subGroup.setAttribute('id', 'worldsubs');
 
     const frag = document.createDocumentFragment();
     const clips = document.createDocumentFragment();
-    for (const [code, list] of Object.entries(areaData.a)) {
+    for (const [code, list] of Object.entries(worldSubs.u)) {
       const feature = byCode.get(code);
       if (!feature || !feature.d) continue;
 
       const clip = document.createElementNS(SVG_NS, 'clipPath');
-      clip.id = `cellclip-${code}`;
+      clip.id = `subclip-${code}`;
       const shape = document.createElementNS(SVG_NS, 'path');
       shape.setAttribute('transform', `scale(${1 / PATH_SCALE})`);
       shape.setAttribute('d', feature.d);
@@ -1289,76 +1390,58 @@
       clips.appendChild(clip);
 
       const outer = document.createElementNS(SVG_NS, 'g');
-      outer.setAttribute('clip-path', `url(#cellclip-${code})`);
-      outer.dataset.cells = code;
+      outer.setAttribute('clip-path', `url(#subclip-${code})`);
       const inner = document.createElementNS(SVG_NS, 'g');
-      inner.setAttribute('transform', `scale(${1 / areaData.ps})`);
-      // every cell edge in one path: the outlines are what makes a country read as
-      // a mosaic of cities, and 6,000 separate nodes is what made this lag before
-      const mesh = document.createElementNS(SVG_NS, 'path');
-      mesh.setAttribute('class', 'cellmesh');
-      mesh.setAttribute('d', list.map(([, d]) => d).join(''));
-      inner.appendChild(mesh);
+      inner.setAttribute('transform', `scale(${1 / worldSubs.ps})`);
+      for (const unit of list) {
+        const path = document.createElementNS(SVG_NS, 'path');
+        path.setAttribute('d', unit.d);
+        path.setAttribute('class', 'sub world');
+        path.dataset.sub = unit.c;
+        inner.appendChild(path);
+        register(unit.c, path);
+      }
       outer.appendChild(inner);
       frag.appendChild(outer);
     }
     defs.replaceChildren(clips);
-    cellGroup.appendChild(frag);
-    scene.insertBefore(cellGroup, scene.querySelector('#dots'));
-    paintCells();
+    subGroup.appendChild(frag);
+    scene.insertBefore(subGroup, scene.querySelector('#dots'));
+    for (const code of subMarks.keys()) paintSub(code);
   }
 
-  // only marked cities get a filled cell, so the DOM stays small however long you play
-  function paintCells() {
-    if (!cellGroup || !cityData) return;
-    for (const group of cellGroup.children) {
-      const code = group.dataset.cells;
-      const inner = group.firstChild;
-      for (const el of [...inner.querySelectorAll('.cell')]) el.remove();
-      for (const [id, lv] of cityMarks) {
-        const city = cityData.byId.get(id);
-        if (!city || city.c !== code) continue;
-        const d = cellOf.get(id);
-        if (!d) continue;
-        const cell = document.createElementNS(SVG_NS, 'path');
-        cell.setAttribute('d', d);
-        cell.setAttribute('class', `cell on lv${lv}`);
-        cell.dataset.city = id;
-        inner.appendChild(cell);
-      }
+  function register(code, path) {
+    const list = subPaths.get(code);
+    if (list) list.push(path);
+    else subPaths.set(code, [path]);
+  }
+
+  function unregister(path) {
+    for (const [code, list] of subPaths) {
+      const at = list.indexOf(path);
+      if (at >= 0) list.splice(at, 1);
+      if (!list.length) subPaths.delete(code);
     }
   }
 
-  // which city's area is under this event — the country beneath decides whose
-  // cities are candidates, so a click near a border cannot jump to the neighbour
-  function cityAt(e) {
-    if (!cityData) return null;
-    const code = codeAt(e.target, e.clientX, e.clientY);
-    if (!code) return null;
-    const at = svgPoint(e);
-    let best = null;
-    let bestD = Infinity;
-    for (const city of cityData.c) {
-      if (city.c !== code) continue;
-      const dx = city.x / cityData.scale - at.x;
-      const dy = city.y / cityData.scale - at.y;
-      const d = dx * dx + dy * dy;
-      if (d < bestD) {
-        bestD = d;
-        best = city.i;
-      }
-    }
-    return best;
+  // the unit behind a code, wherever it is loaded from
+  function unitOf(code) {
+    if (detail && detail.byId.has(code)) return detail.byId.get(code).unit;
+    const country = subOwner.get(code);
+    return (worldSubs && country && worldSubs.u[country].find((u) => u.c === code)) || null;
   }
 
-  const cityCountries = () => {
+  const subCountries = () => {
     const codes = new Set();
-    if (cityData) for (const id of cityMarks.keys()) {
-      const city = cityData.byId.get(id);
-      if (city) codes.add(city.c);
+    for (const code of subMarks.keys()) {
+      const country = subOwner.get(code) || (detail && detail.code);
+      if (country) codes.add(country);
     }
     return codes.size;
   };
+
+  const worldSubCount = () =>
+    worldSubs ? Object.values(worldSubs.u).reduce((n, list) => n + list.length, 0) : subMarks.size;
 
   async function toggleCity(id) {
     const data = await ensureCities();
@@ -1367,7 +1450,6 @@
     if (next) cityMarks.set(id, next);
     else cityMarks.delete(id);
     drawCities();
-    paintCells();
     flashCity(id, next);
     if (mode === 'cities') buildList(); // the city view lists what you have marked
     const row = els[`c${id}`] && els[`c${id}`].row;
@@ -1407,7 +1489,7 @@
   /* ---------------- globe ---------------- */
   // ?v= keeps a cached stylesheet from ever pairing with a newer script; bump it
   // in index.html and here together when deploying
-  const ASSET_V = 'v=14';
+  const ASSET_V = 'v=15';
   const GLOBE_FILES = [
     'js/vendor/d3-array-shim.js',
     'js/vendor/d3-geo.min.js',
@@ -1467,17 +1549,17 @@
   async function setView(next) {
     if (next === 'globe' && !(await ensureGlobe())) return;
     if (next === 'cities') {
-      if (detail) closeDetail(); // a country's provinces and its cities are two subjects
+      if (detail) closeDetail(); // one country's provinces, or the whole world's
       toast(t('loadingCities'));
-      if (!(await ensureCityAreas())) return toast(t('copyFail'));
-      buildMosaic();
+      if (!(await ensureWorldSubs())) return toast(t('copyFail'));
+      buildSubLayer();
     }
     mode = next;
     savePrefs();
     const onGlobe = mode === 'globe';
     const onCities = mode === 'cities';
     document.body.classList.toggle('in-cities', onCities);
-    if (cellGroup) cellGroup.style.display = onCities ? '' : 'none';
+    if (subGroup) subGroup.style.display = onCities ? '' : 'none';
     // set display inline as well as the attribute: a stale cached stylesheet without
     // the [hidden] rules would otherwise leave the flat map showing under the globe
     $('map').hidden = onGlobe;
@@ -1588,11 +1670,78 @@
   }
 
   function shareMessage() {
+    if (mode === 'cities') return t('shareTextSubs').replace('{n}', subMarks.size);
     const s = stats();
     return t('shareText').replace('{n}', s.sov).replace('{total}', s.total).replace('{pct}', withPct(s.pct));
   }
 
+  // The card follows the view: in the city view it is about provinces, so the map
+  // paints those, the headline counts them, and the breakdown is by country rather
+  // than by continent.
+  const shorten = (name, max) => (name.length > max ? `${name.slice(0, max - 1).trimEnd()}…` : name);
+
+  function subCardInput(size) {
+    const done = subMarks.size;
+    const total = worldSubCount() || done;
+    const byLevel = { 1: 0, 2: 0, 3: 0, 4: 0 };
+    const perCountry = new Map();
+    const shapes = [];
+    const names = [];
+    for (const [code, lv] of subMarks) {
+      byLevel[lv] = (byLevel[lv] || 0) + 1;
+      const country = subOwner.get(code);
+      if (country) perCountry.set(country, (perCountry.get(country) || 0) + 1);
+      const unit = unitOf(code);
+      if (!unit) continue;
+      names.push(subNameOf(unit));
+      const world = worldSubs && country && worldSubs.u[country].find((u) => u.c === code);
+      if (world) shapes.push({ d: world.d, lv });
+    }
+    names.sort((a, b) => a.localeCompare(b, lang));
+    const pct = total ? (done / total) * 100 : 0;
+    const top = [...perCountry.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([code, have]) => ({
+        label: shorten(nameOf(byCode.get(code)) || code, 14),
+        have,
+        total: (worldSubs && worldSubs.u[code] && worldSubs.u[code].length) || have,
+      }));
+
+    return {
+      size,
+      world: WORLD,
+      marks,
+      subs: { ps: (worldSubs && worldSubs.ps) || 1, shapes },
+      levels: LEVELS.map((l) => ({ id: l.id, label: t(l.key), count: byLevel[l.id] || 0, color: cssVar(`--lv${l.id}`) })),
+      stats: { sov: done, total, terr: 0, pct: Math.round(pct) },
+      regions: top,
+      names,
+      extras: [
+        { label: t('countries'), value: String(perCountry.size), sub: `${done} ${t('provinces')}`, ratio: perCountry.size / SOVEREIGN_TOTAL },
+        ...(cityCount() ? [{ label: t('cities'), value: String(cityCount()), sub: '', ratio: Math.min(1, cityCount() / 40) }] : []),
+      ],
+      texts: {
+        title: t('cardTitleSubs'),
+        countries: t('provinces'),
+        territories: t('territories'),
+        pct: withPct(pct),
+        more: t('cardMore'),
+        url: (location.host + location.pathname).replace(/\/(index\.html)?$/, ''),
+      },
+      colors: {
+        bg: cssVar('--bg-2'),
+        ocean: cssVar('--ocean'),
+        land: cssVar('--land'),
+        on: cssVar('--lv2'),
+        ink: cssVar('--ink'),
+        accent: cssVar('--accent'),
+      },
+    };
+  }
+
   function buildCardSVG(size) {
+    if (mode === 'cities') return EarthCard.build(subCardInput(size));
     const s = stats();
     const selected = FEATURES.filter((f) => been(f.c) && isCountry(f))
       .map(nameOf)
@@ -1775,6 +1924,7 @@
       if (q.length >= 2) ensureCityNames(lang).then(() => showCityMatches(q));
       drawCities();
     }
+    if (worldSubs) ensureSubNames(lang).then(() => buildList());
     updateScore();
     if ($('settings').open) renderSettings();
     if ($('sheet').open) {
@@ -1902,7 +2052,7 @@
     });
     // two-step reset instead of a browser confirm(): the second tap does it
     $('resetBtn').onclick = () => {
-      const nothing = detail ? !detailCount() : mode === 'cities' ? !cityMarks.size : !marks.size && !subMarks.size && !cityMarks.size;
+      const nothing = detail ? !detailCount() : mode === 'cities' ? !subMarks.size : !marks.size && !subMarks.size && !cityMarks.size;
       if (nothing) return;
       if (!resetArmed) {
         resetArmed = true;
@@ -1918,10 +2068,10 @@
         for (const unit of detail.units) subMarks.delete(unit.c);
         for (const id of detail.byId.keys()) paintSub(id);
       } else if (mode === 'cities') {
-        // and in the city view it means the cities, not the countries
-        cityMarks.clear();
-        drawCities();
-        paintCells();
+        // and in the city view it means the provinces, not the countries
+        const all = [...subMarks.keys()];
+        subMarks.clear();
+        all.forEach(paintSub);
         buildList();
       } else {
         const all = [...marks.keys()];
@@ -1929,7 +2079,6 @@
         subMarks.clear(); // otherwise provinces would linger, invisible, in the next link
         cityMarks.clear();
         drawCities();
-        paintCells();
         all.forEach(paintShape);
         all.forEach(paintRow);
       }

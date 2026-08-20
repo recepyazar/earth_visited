@@ -65,14 +65,26 @@ window.EarthCard = (() => {
     for (const d of o.world.decor) out.push(`<path d="${d}" fill="${c.land}" opacity=".5"/>`);
     for (const f of o.world.f) {
       if (!f.d) continue;
-      out.push(`<path d="${f.d}" fill="${levelColor.get(o.marks.get(f.c)) || c.land}"${pathStroke}/>`);
+      // in the province card the countries stay plain: the colour belongs to the
+      // provinces drawn over them
+      const fill = o.subs ? c.land : levelColor.get(o.marks.get(f.c)) || c.land;
+      out.push(`<path d="${f.d}" fill="${fill}"${pathStroke}/>`);
     }
     out.push('</g>');
+
+    // marked provinces, over their countries and at their own scale
+    if (o.subs && o.subs.shapes.length) {
+      out.push(`<g transform="scale(${r(1 / (o.subs.ps || 1))})">`);
+      for (const shape of o.subs.shapes) {
+        out.push(`<path d="${shape.d}" fill="${levelColor.get(shape.lv) || c.land}"${pathStroke}/>`);
+      }
+      out.push('</g>');
+    }
 
     const dotStroke = ` stroke="${c.ocean}" stroke-width="${r(0.5 / k)}"`;
     for (const f of o.world.f) {
       if (f.a >= 6) continue;
-      const fill = levelColor.get(o.marks.get(f.c)) || c.land;
+      const fill = o.subs ? c.land : levelColor.get(o.marks.get(f.c)) || c.land;
       out.push(`<circle cx="${f.x}" cy="${f.y}" r="${r(Math.max(2.6, 3.6 / k))}" fill="${fill}"${dotStroke}/>`);
     }
     out.push('</g></g>');

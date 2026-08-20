@@ -565,11 +565,11 @@ test('a city survives a reload and clears with the map', async () => {
   await close(page);
 });
 
-test('the city view splits every country among its cities', async () => {
+test('the city view splits every country into its provinces', async () => {
   const page = await open('?lang=tr');
   const fetched = () => page.evaluate(() =>
-    performance.getEntriesByType('resource').filter((r) => /cityareas|cities\.js/.test(r.name)).length);
-  assert.equal(await fetched(), 0, 'the mosaic is not part of the first load');
+    performance.getEntriesByType('resource').some((r) => r.name.includes('admin1/world.js')));
+  assert.equal(await fetched(), false, 'the world province layer is not part of the first load');
 
   // a country marked on the world map must not read as "all of it" here
   await clickCountry(page, 'TR');
@@ -577,32 +577,43 @@ test('the city view splits every country among its cities', async () => {
   const painted = await stableFill(page, 'path[data-code=TR]');
 
   await page.click('#viewCities');
-  await page.waitForSelector('#citycells .cellmesh', { timeout: 25000 });
+  await page.waitForSelector('#worldsubs path.sub.world', { timeout: 40000 });
   await settled(page);
-  assert.ok((await page.$$eval('#citycells > g', (g) => g.length)) > 150, 'one clipped group per country');
+  assert.ok((await page.$$eval('#worldsubs path.sub.world', (p) => p.length)) > 4000, 'the whole world, by province');
   const plain = await stableFill(page, 'path[data-code=DE]');
-  assert.notEqual(plain, painted);
   await page.waitForFunction(
     (flat) => getComputedStyle(document.querySelector('path[data-code=TR]')).fill === flat,
     {}, plain
   ).catch(() => { throw new Error('the country is still painted in the city view'); });
 
-  // a press anywhere on land marks the city whose area it fell in
+  // clicking a province marks that province, not its country
   const spot = await page.evaluate(() => {
-    const box = document.querySelector('path[data-code=TR]').getBoundingClientRect();
-    return { x: box.x + box.width * 0.4, y: box.y + box.height * 0.5 };
+    const el = document.querySelector('path[data-sub="TR-34"]');
+    const box = el.getBBox();
+    const pt = el.ownerSVGElement.createSVGPoint();
+    for (const fy of [0.5, 0.45, 0.55]) {
+      for (const fx of [0.5, 0.45, 0.55]) {
+        pt.x = box.x + box.width * fx;
+        pt.y = box.y + box.height * fy;
+        if (el.isPointInFill(pt)) {
+          const s = pt.matrixTransform(el.getScreenCTM());
+          return { x: s.x, y: s.y };
+        }
+      }
+    }
+    return null;
   });
   await page.mouse.click(spot.x, spot.y);
-  await page.waitForFunction(() => document.querySelectorAll('#citycells .cell').length === 1);
-  const cell = await page.$eval('#citycells .cell', (c) => c.getAttribute('class'));
-  assert.match(cell, /\bon\b.*\blv2\b/, 'the area carries the brush level');
-  assert.match(await text(page, '#scoreSub'), /şehir · 1 ülkede/);
-  assert.match(await page.$eval('.row.city-row .nm', (e) => e.textContent), /, Türkiye$/, 'and the list names it');
+  await page.waitForFunction(() => document.querySelectorAll('#worldsubs .sub.on').length === 1);
+  assert.equal(await page.$eval('#worldsubs .sub.on', (e) => e.dataset.sub), 'TR-34');
+  assert.match(await text(page, '#scoreSub'), /il · 1 ülkede/);
+  assert.equal(await page.$eval('.row.city-row .nm', (e) => e.textContent), 'İstanbul, Türkiye');
+  assert.equal(await text(page, '#count'), '1');
 
-  // Reset here is about cities, and the country keeps its own colour
+  // Reset here is about provinces, and the country keeps its own colour
   await page.click('#resetBtn');
   await page.click('#resetBtn');
-  await page.waitForFunction(() => !document.querySelectorAll('#citycells .cell').length);
+  await page.waitForFunction(() => !document.querySelectorAll('#worldsubs .sub.on').length);
   await page.click('#viewMap');
   await page.waitForFunction(
     (green) => getComputedStyle(document.querySelector('path[data-code=TR]')).fill === green,
@@ -612,23 +623,40 @@ test('the city view splits every country among its cities', async () => {
   await close(page);
 });
 
-test('a city marked in the city view travels in the link', async () => {
+test('a province marked in the city view is the same one the country view shows', async () => {
   const page = await open('?lang=tr&view=cities');
-  await page.waitForSelector('#citycells .cellmesh', { timeout: 25000 });
-  await page.type('#search', 'izmir');
+  await page.waitForSelector('#worldsubs path.sub.world', { timeout: 40000 });
+
+  // the search finds any province in the world, in the visitor's language
+  await page.type('#search', 'bavyera');
   await page.waitForSelector('.row.city-row.found');
+  assert.equal(await page.$eval('.row.city-row.found .nm', (e) => e.textContent), 'Bavyera, Almanya');
   await page.click('.row.city-row.found');
-  await page.waitForFunction(() => document.querySelectorAll('#citycells .cell').length === 1);
+  await page.waitForFunction(() => document.querySelectorAll('#worldsubs .sub.on').length === 1);
 
   const link = await page.evaluate(() => {
     document.getElementById('shareBtn').click();
     return location.hash;
   });
-  assert.match(link, /&c=/);
+  assert.match(link, /&p=DE~/, 'and it travels in the province section of the link');
+  await page.evaluate(() => document.getElementById('sheet').close());
 
-  const other = await open(`?lang=tr&view=cities${link}`);
-  await other.waitForFunction(() => document.querySelectorAll('#citycells .cell').length === 1, { timeout: 25000 });
-  assert.equal(await text(other, '#count'), '1', 'the same city, painted, in a fresh browser');
+  // the same mark, seen from inside the country
+  await page.click('#viewMap');
+  await openTurkey(page); // a detail view of another country must not disturb it
+  await page.evaluate(() => document.getElementById('crumbBack').click());
+  await page.waitForFunction(() => !document.querySelector('path.sub:not(.world)'));
+
+  const other = await open(`?lang=tr${link}`);
+  await other.evaluate(() => {
+    const s = document.getElementById('search');
+    s.value = 'almanya';
+    s.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await other.waitForSelector('.row[data-code=DE] .into');
+  await other.evaluate(() => document.querySelector('.row[data-code=DE] .into').click());
+  await other.waitForSelector('path.sub');
+  assert.equal(await text(other, '#crumbCount'), '1/16', 'the link brought Bavaria to the country view');
   assert.deepEqual(page.errors, []);
   assert.deepEqual(other.errors, []);
   await close(page);

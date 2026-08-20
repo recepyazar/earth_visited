@@ -10,12 +10,12 @@
     "test:all": "npm test && npm run test:browser",
     "build:admin1": "node gen-admin1.mjs",
     "build:cities": "node gen-cities.mjs",
-    "build:cityareas": "node gen-cityareas.mjs"
+    "build:admin1-world": "node --max-old-space-size=4096 gen-admin1-world.mjs"
   },
   "dependencies": {
-    "d3-delaunay": "^6.0.4",
     "d3-geo": "^3.1.1",
     "topojson-client": "^3.1.0",
+    "topojson-server": "^3.0.1",
     "topojson-simplify": "^3.0.3",
     "world-atlas": "^2.0.2",
     "world-countries": "^5.0.0"

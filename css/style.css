@@ -849,6 +849,8 @@ img.flag { width: 20px; height: 14px; object-fit: cover; border-radius: 2px; }
 }
 .row .into:hover { color: var(--ink); background: color-mix(in srgb, var(--ink) 12%, transparent); }
 .flash-into {
+  /* the strip itself lets clicks through to the map; this shortcut must not */
+  pointer-events: auto;
   flex: none;
   border: 0;
   border-radius: 7px;
@@ -884,28 +886,24 @@ body.in-detail #regionBlock { display: none; } /* filtering continents inside a 
 .city.lv2, .city.lv2:hover { fill: var(--lv2); }
 .city.lv3, .city.lv3:hover { fill: var(--lv3); }
 .city.lv4, .city.lv4:hover { fill: var(--lv4); }
-/* ---- the city view: every country split among its own cities ---- */
-#citycells { pointer-events: none; }
-.cellmesh {
-  fill: none;
+/* ---- the city view: the whole world by its provinces ---- */
+#worldsubs .sub.world {
+  fill: transparent;
+  /* the fill is invisible but must still take the tap */
+  pointer-events: all;
   stroke: var(--border);
-  /* the cells live inside a scale(1/10) group and the map itself zooms, so the
-     mosaic is drawn in screen pixels: a hairline at every zoom level */
+  /* drawn in screen pixels: a hairline at every zoom, and measurably faster here
+     than a stroke that scales with the transform */
+  stroke-width: .55;
   vector-effect: non-scaling-stroke;
-  stroke-width: .7;
-  opacity: .5;
 }
-.cell {
-  stroke: var(--border-on);
-  vector-effect: non-scaling-stroke;
-  stroke-width: .8;
-}
-.cell.lv1 { fill: var(--lv1); }
-.cell.lv2 { fill: var(--lv2); }
-.cell.lv3 { fill: var(--lv3); }
-.cell.lv4 { fill: var(--lv4); }
-.cell.hl { stroke: var(--accent); stroke-width: 2; }
-/* the countries themselves step back: in this view the colour belongs to cities,
+#worldsubs .sub.world.lv1 { fill: var(--lv1); }
+#worldsubs .sub.world.lv2 { fill: var(--lv2); }
+#worldsubs .sub.world.lv3 { fill: var(--lv3); }
+#worldsubs .sub.world.lv4 { fill: var(--lv4); }
+#worldsubs .sub.world.on { stroke: var(--border-on); }
+#worldsubs .sub.world.hl { stroke: var(--accent); stroke-width: 2; }
+/* the countries themselves step back: in this view the colour belongs to provinces,
    and a country you have been to must not read as "all of it visited" */
 body.in-cities .land,
 body.in-cities .land.on,
@@ -915,6 +913,9 @@ body.in-cities .land.lv3, body.in-cities .land.lv4 {
   stroke: var(--border);
 }
 body.in-cities .land.dim { opacity: 1; }
+/* the provinces take every press in this view. Chrome's touch adjustment otherwise
+   hands a tap to the country underneath, which is not what is being marked here. */
+body.in-cities .land { pointer-events: none; }
 body.in-cities .dot, body.in-cities #hits { display: none; }
 body.in-cities #regionBlock,
 body.in-cities .tiles,
