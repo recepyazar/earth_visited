@@ -29,6 +29,15 @@ Inspired by [turkeyvisited](https://ozanyerli.github.io/turkeyvisited/), but for
   card also show what share of the Earth's land (150.0M km², Antarctica included) and of its people
   (8.22 bn) your selection covers. Visiting 48 countries can mean 25% of the countries but 47% of the land
   and 65% of humanity.
+- **Provinces and states** — twelve countries open into their own regions: Türkiye's 81 provinces, the 50
+  US states, Japan's prefectures and so on. Open one from the chevron in the list or the shortcut on the tap
+  strip; the map zooms in, the list becomes the provinces, and the same four levels apply. The counter reads
+  `12/81`, `‹ World` takes you back, and each country's geometry is fetched only when you open it (Türkiye is
+  50 KB).
+- **Cities** — a pin button turns the world map into 6,241 cities over 100,000 people. Only the biggest show
+  at world zoom and the threshold drops as you zoom in, so the map never becomes a smear. Mark them from the
+  map or from a searchable list, and the score reads “128 cities · in 34 countries”. The layer is fetched
+  only when you ask for it (113 KB over the wire).
 - **Progress by region** — Africa, Americas, Asia, Europe, Oceania.
 - **Twelve languages** — English, Türkçe, Deutsch, Español, Français, Italiano, Português, Русский, 中文,
   العربية, 日本語, 한국어, for both the interface and the country names; search matches any of them, so typing
@@ -50,7 +59,9 @@ Inspired by [turkeyvisited](https://ozanyerli.github.io/turkeyvisited/), but for
   sheet, which is where Instagram, WhatsApp, X and the rest already live. Browsers without a share sheet fall
   back to saving the card or copying it to the clipboard.
 - **Copy link** — your selection is encoded in the URL (`#v2=…`: three bits per country, so levels survive
-  the trip), and older `#v1=` links still open, importing everything as *visited*.
+  the trip), with provinces in a `&p=` section that only carries the countries you actually opened — all 81
+  Turkish provinces cost about 40 characters — and cities in a `&c=` section written as gaps rather than a
+  bitset, so a hundred cities add roughly 150 characters instead of 2 KB. Older `#v1=` links still open, importing everything as *visited*.
   Selections also persist in `localStorage`. A static `og.png` gives the link a proper preview card.
 
 ## Installable and offline
@@ -107,7 +118,11 @@ og.png              static link-preview image
 manifest.json       PWA manifest
 sw.js               service worker: precaches the shell, caches the globe on demand
 assets/icons/       app icons (192, 512, maskable, apple-touch)
+js/admin1/          GENERATED — one file per country with a province layer, plus a tiny index
+js/cities.js        GENERATED — the city layer, loaded on demand
 tools/gen.mjs       regenerates js/data.js
+tools/gen-admin1.mjs regenerates js/admin1/ from Natural Earth 1:10m admin-1
+tools/gen-cities.mjs regenerates js/cities.js from GeoNames cities15000
 tools/fetch-population.mjs   refreshes tools/population.json from the World Bank
 ```
 
@@ -141,6 +156,45 @@ A few choices the generator makes:
 - Taiwan and other non-UN entities are selectable but counted as territories, not sovereign countries.
 - Tuvalu is absent from the 1:50m dataset, so it is added as a marker-only entry.
 - Shapes with no ISO code (Siachen Glacier, Indian Ocean territories) are drawn but not selectable.
+
+## The province layer
+
+```bash
+cd tools
+npm run build:admin1            # add --refresh to re-download the 40 MB source
+```
+
+`gen-admin1.mjs` projects Natural Earth's 1:10m admin-1 units with the **same** Natural Earth projection as
+the world map, so a province drops straight onto the country it belongs to — no reprojection at runtime. The
+tolerance is set per country from its percentile-trimmed width (Alaska and Hawaii would otherwise claim the
+United States is 900 units wide and flatten every state between them), and each file carries a view box for
+zooming in. Units are ordered by ISO 3166-2 code, which is what the share link counts positions against, and
+polygons sharing a code merge into one unit — Lord Howe Island is administratively New South Wales.
+
+Countries with a layer today: TR, US, DE, FR, IT, ES, GB, JP, CA, AU, BR, RU — 1 MB in total, but never more
+than one country at a time over the wire. Adding another is one entry in `COUNTRIES` and a rebuild.
+
+The two layers come from different generalisations — 1:10m provinces against a 1:50m world map — so their
+coastlines disagree by a pixel or two, which showed as a pale halo around an open country. The province group
+is therefore clipped to the country's own world-map shape, and the country keeps its fill underneath: nothing
+spills past the outline the rest of the map draws, and anywhere the finer layer falls short the country shows
+through. (Two SVG rules worth remembering: a `clipPath` nested inside the element it clips reads as circular
+and hides everything, and a `<g>` inside a `clipPath` is ignored — the transform has to sit on the shape.)
+
+## The city layer
+
+```bash
+cd tools
+npm run build:cities            # add --refresh to re-download the 3 MB source
+```
+
+GeoNames' cities15000 holds 34,000 places; we keep the 6,241 over 100,000 people, project them with the map's
+own projection and store each as an id, a name, a country, integer coordinates and a population in thousands
+(393 KB, 113 KB gzipped). Ids are GeoNames ids, ordered, because the share link counts positions against them.
+
+Each mode marks one kind of thing: with cities on, countries dim and stop taking clicks, so a stray tap cannot
+quietly tick a country while you are collecting cities. Opening a country's provinces puts the cities away,
+and vice versa.
 
 ## Why the flag webfont
 
@@ -189,6 +243,7 @@ its neighbours, so clicking Germany at world zoom selected Luxembourg.
 - [world-atlas](https://github.com/topojson/world-atlas) — Natural Earth 1:50m, public domain.
 - [world-countries](https://github.com/mledoze/countries) — ISO codes, names, translations and land area, ODbL.
 - [World Bank](https://data.worldbank.org/indicator/SP.POP.TOTL) — population (SP.POP.TOTL, 2025 values), CC-BY 4.0.
+- [GeoNames](https://www.geonames.org/) — the city layer (cities15000), CC-BY 4.0.
 - [Twemoji Country Flags](https://github.com/talkjs/country-flag-emoji-polyfill) — flag webfont; packaging MIT
   (TalkJS), artwork CC-BY 4.0 (Twitter/Twemoji).
 - [d3-geo](https://github.com/d3/d3-geo) — orthographic projection, spherical clipping and hit testing for the

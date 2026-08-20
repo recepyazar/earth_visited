@@ -58,3 +58,39 @@ test('garbage in a link is refused, not guessed at', () => {
   assert.deepEqual(SHARE.decode(ORDER, 'AAAA'), []);
   assert.equal(SHARE.decode(ORDER, '!!!not base64!!!'), null);
 });
+
+/* ---- provinces ---- */
+const UNITS = { TR: ['TR-01', 'TR-06', 'TR-34', 'TR-35'], DE: ['DE-BE', 'DE-BY', 'DE-HH'] };
+
+test('provinces travel in their own section, one part per country', () => {
+  const sub = new Map([['TR-34', 2], ['TR-06', 1], ['DE-BE', 4]]);
+  const link = SHARE.encodeSub(UNITS, sub);
+  assert.match(link, /^TR~[\w-]+\.DE~[\w-]+$/, 'a section for each country that has marks');
+  assert.deepEqual(new Map(SHARE.decodeSub(UNITS, link)), sub);
+});
+
+test('a country with nothing marked costs nothing', () => {
+  const link = SHARE.encodeSub(UNITS, new Map([['TR-34', 2]]));
+  assert.equal(link, `TR~${link.split('~')[1]}`, 'only Türkiye is in there');
+  assert.ok(!link.includes('DE'), 'Germany is not paid for');
+  assert.equal(SHARE.encodeSub(UNITS, new Map()), '', 'no provinces at all means no section');
+});
+
+test('a section for a country we no longer ship is skipped, not fatal', () => {
+  const link = 'XX~AAAA.TR~' + SHARE.encodeSub(UNITS, new Map([['TR-01', 3]])).split('~')[1];
+  assert.deepEqual(SHARE.decodeSub(UNITS, link), [['TR-01', 3]]);
+});
+
+test('province links stay URL-safe and short', () => {
+  const all = new Map(UNITS.TR.map((id, i) => [id, (i % 4) + 1]));
+  const link = SHARE.encodeSub(UNITS, all);
+  assert.match(link, /^[A-Za-z0-9_~.-]+$/);
+  assert.ok(link.length < 40, `a marked country adds little (${link.length} chars)`);
+});
+
+test('a real country worth of provinces still fits in a link', () => {
+  const ids = Array.from({ length: 81 }, (_, i) => `TR-${String(i + 1).padStart(2, '0')}`);
+  const link = SHARE.encodeSub({ TR: ids }, new Map(ids.map((id) => [id, 2])));
+  assert.ok(link.length < 60, `81 provinces cost ${link.length} characters`);
+  assert.equal(SHARE.decodeSub({ TR: ids }, link).length, 81);
+});

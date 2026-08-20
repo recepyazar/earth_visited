@@ -7,7 +7,9 @@
     "population": "node fetch-population.mjs",
     "test": "node --test \"test/unit/*.test.mjs\"",
     "test:browser": "node --test \"test/browser/*.test.mjs\"",
-    "test:all": "npm test && npm run test:browser"
+    "test:all": "npm test && npm run test:browser",
+    "build:admin1": "node gen-admin1.mjs",
+    "build:cities": "node gen-cities.mjs"
   },
   "dependencies": {
     "d3-geo": "^3.1.1",

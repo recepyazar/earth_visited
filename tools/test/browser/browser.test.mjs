@@ -299,8 +299,184 @@ test('selections survive a reload, and Reset needs two taps', async () => {
   await close(page);
 });
 
+// helper: click a province by its ISO code, the same "find a point inside" trick
+const clickProvince = async (page, id) => {
+  const point = await page.evaluate((code) => {
+    const el = document.querySelector(`path[data-sub="${code}"]`);
+    if (!el) return null;
+    const box = el.getBBox();
+    const pt = el.ownerSVGElement.createSVGPoint();
+    const fractions = [0.5, 0.45, 0.55, 0.4, 0.6, 0.35, 0.65];
+    for (const fy of fractions) {
+      for (const fx of fractions) {
+        pt.x = box.x + box.width * fx;
+        pt.y = box.y + box.height * fy;
+        if (el.isPointInFill(pt)) {
+          const s = pt.matrixTransform(el.getScreenCTM());
+          return { x: s.x, y: s.y };
+        }
+      }
+    }
+    return null;
+  }, id);
+  if (!point) throw new Error(`no point inside ${id}`);
+  await page.mouse.click(point.x, point.y);
+  await page
+    .waitForFunction((code) => document.querySelector(`path[data-sub="${code}"]`).classList.contains('on'), {}, id)
+    .catch(() => {
+      throw new Error(`the click missed ${id}`);
+    });
+};
+
+const openTurkey = async (page) => {
+  await page.evaluate(() => {
+    const s = document.getElementById('search');
+    s.value = 'türkiye';
+    s.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await page.waitForSelector('.row[data-code=TR] .into');
+  await page.evaluate(() => document.querySelector('.row[data-code=TR] .into').click());
+  await page.waitForSelector('path.sub');
+};
+
+test('a country opens into its provinces and closes again', async () => {
+  const page = await open('?lang=tr');
+  await openTurkey(page);
+  assert.equal(await page.$$eval('path.sub', (p) => p.length), 81, 'all 81 provinces are drawn');
+  assert.equal(await text(page, '#crumbName'), 'Türkiye');
+  assert.equal(await text(page, '#crumbCount'), '0/81');
+  assert.equal(await page.$$eval('.row', (r) => r.length), 81, 'the list switched to provinces');
+  assert.equal(await page.$eval('#search', (e) => e.value), '', 'the country search does not hide them');
+
+  await clickProvince(page, 'TR-34');
+  await clickProvince(page, 'TR-35');
+  assert.equal(await text(page, '#crumbCount'), '2/81');
+  assert.equal(await text(page, '#count'), '2');
+  assert.match(await text(page, '#flash'), /İzmir/);
+
+  await page.click('#crumbBack');
+  await page.waitForFunction(() => !document.querySelector('path.sub'));
+  assert.equal(await text(page, '#total'), '/ 196', 'the world score is back');
+  assert.deepEqual(page.errors, []);
+  await close(page);
+});
+
+test('opening a country from the globe lands on the flat map, provinces and all', async () => {
+  const page = await open('?lang=tr');
+  await page.click('#viewGlobe');
+  await page.waitForFunction(() => window.Globe && window.Globe.mounted);
+  await openTurkey(page); // the chevron used to do nothing at all here
+  assert.equal(await page.$eval('#map', (e) => getComputedStyle(e).display), 'block', 'back on the flat map');
+  assert.equal(await page.$$eval('path.sub', (p) => p.length), 81);
+  assert.equal(await text(page, '#crumbName'), 'Türkiye');
+  await clickProvince(page, 'TR-34');
+  assert.equal(await text(page, '#crumbCount'), '1/81');
+  assert.deepEqual(page.errors, []);
+  await close(page);
+});
+
+test('provinces survive a reload and travel in the link', async () => {
+  const page = await open('?lang=tr');
+  await openTurkey(page);
+  await clickProvince(page, 'TR-06');
+  const link = await page.evaluate(() => {
+    document.getElementById('shareBtn').click();
+    return location.hash;
+  });
+  assert.match(link, /&p=TR~/, 'the link carries a province section');
+
+  await page.reload({ waitUntil: 'networkidle0' });
+  await page.waitForSelector('path.pickable');
+  await openTurkey(page);
+  assert.equal(await text(page, '#crumbCount'), '1/81', 'remembered across a reload');
+
+  const other = await open(`?lang=tr${link}`);
+  await openTurkey(other);
+  assert.equal(await text(other, '#crumbCount'), '1/81', 'and the link brings it to a fresh browser');
+  assert.ok(
+    await other.$eval('path[data-sub="TR-06"]', (e) => e.classList.contains('lv2')),
+    'the same province, at the same level'
+  );
+  await close(page);
+  await close(other);
+});
+
+test('the city layer marks from the map, the list and a link', async () => {
+  const page = await open('?lang=tr');
+  const before = await page.evaluate(() => performance.getEntriesByType('resource').some((r) => r.name.includes('cities.js')));
+  assert.equal(before, false, 'cities are not part of the first load');
+
+  await page.click('#viewCities');
+  await page.waitForSelector('circle.city');
+  const shown = await page.$$eval('circle.city:not(.faint)', (c) => c.length);
+  const all = await page.$$eval('circle.city', (c) => c.length);
+  assert.ok(all > 5000, `every city is in the layer (${all})`);
+  assert.ok(shown > 300 && shown < 1200, `only the big ones show at world zoom (${shown})`);
+
+  // from the map
+  const point = await page.evaluate(() => {
+    const dot = [...document.querySelectorAll('circle.city:not(.faint)')][3];
+    const r = dot.getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  });
+  await page.mouse.click(point.x, point.y);
+  await page.waitForFunction(() => document.getElementById('count').textContent === '1');
+
+  // from the list, through search
+  await page.type('#search', 'istanbul');
+  await page.waitForFunction(() => document.querySelectorAll('.row').length === 1);
+  assert.equal(await page.$eval('.row .nm', (e) => e.textContent), 'Istanbul');
+  await page.click('.row');
+  await page.waitForFunction(() => document.getElementById('count').textContent === '2');
+  assert.match(await text(page, '#scoreSub'), /şehir/);
+
+  const link = await page.evaluate(() => {
+    document.getElementById('shareBtn').click();
+    return location.hash;
+  });
+  assert.match(link, /&c=/, 'the link carries a city section');
+  assert.ok(link.length < 200, `and stays pasteable (${link.length} chars)`);
+
+  const other = await open(`?lang=tr${link}`);
+  await other.click('#viewCities');
+  await other.waitForSelector('circle.city');
+  assert.equal(await text(other, '#count'), '2', 'the link brings both cities to a fresh browser');
+  assert.deepEqual(page.errors, []);
+  await close(page);
+  await close(other);
+});
+
+test('the city layer and a country detail take turns', async () => {
+  const page = await open('?lang=tr');
+
+  // from a country, turning cities on puts the provinces away
+  await openTurkey(page);
+  assert.equal(await page.$$eval('path.sub', (p) => p.length), 81);
+  await page.click('#viewCities');
+  await page.waitForSelector('circle.city');
+  assert.equal(await page.$$eval('path.sub', (p) => p.length), 0, 'the province layer stepped aside');
+  assert.equal(await page.$eval('#crumbs', (e) => e.hidden), true, 'and so did its breadcrumb');
+
+  // countries are out of reach while cities are the subject — no accidental ticks
+  assert.equal(await page.$eval('path[data-code=TR]', (e) => getComputedStyle(e).pointerEvents), 'none');
+
+  // turning cities off hands the map back to the countries
+  await page.click('#viewCities');
+  await page.waitForFunction(() => !document.querySelector('circle.city'));
+  await clickCountry(page, 'TR');
+  await page.waitForSelector('.flash-into');
+  assert.match(await text(page, '.flash-into'), /81/);
+  // clicked through the DOM: the strip is a transient overlay and a real mouse
+  // click can land on whatever slides in over it
+  await page.evaluate(() => document.querySelector('.flash-into').click());
+  await page.waitForSelector('path.sub');
+  assert.equal(await text(page, '#crumbName'), 'Türkiye');
+  assert.deepEqual(page.errors, []);
+  await close(page);
+});
+
 test('the service worker installs and serves the app offline', async () => {
-  const page = await open();
+  const page = await open('?sw=1'); // it stays off on localhost unless asked for
   await page.waitForFunction(async () => {
     const reg = await navigator.serviceWorker.getRegistration();
     return !!(reg && reg.active);

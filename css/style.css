@@ -779,3 +779,110 @@ img.flag { width: 20px; height: 14px; object-fit: cover; border-radius: 2px; }
      so the hint keeps clear of the left corner instead of the right one */
   [dir="rtl"] .hint { left: 112px; right: 10px; text-align: right; }
 }
+
+/* ---------- province layer ---------- */
+.sub {
+  fill: var(--land);
+  stroke: var(--border);
+  stroke-width: .7;
+  vector-effect: non-scaling-stroke;
+  cursor: pointer;
+  transition: fill .12s ease;
+}
+.sub:hover { fill: var(--land-hover); }
+.sub.on { stroke: var(--border-on); }
+.sub.lv1, .sub.lv1:hover { fill: var(--lv1); }
+.sub.lv2, .sub.lv2:hover { fill: var(--lv2); }
+.sub.lv3, .sub.lv3:hover { fill: var(--lv3); }
+.sub.lv4, .sub.lv4:hover { fill: var(--lv4); }
+.sub.hl { stroke: var(--accent); stroke-width: 2; }
+/* The provinces are clipped to this very shape, so it stays visible at full
+   strength: anywhere the finer layer falls short, the country itself shows through
+   and the outline is the one the rest of the map draws. */
+.land.under { pointer-events: none; }
+
+.crumbs {
+  position: absolute;
+  top: 10px;
+  left: 12px;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px 5px 6px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  box-shadow: var(--shadow);
+  font-size: 13px;
+}
+.crumbs[hidden] { display: none; }
+.crumbs b { font-weight: 700; }
+.crumbs span { color: var(--ink-dim); font-variant-numeric: tabular-nums; }
+.crumb-back {
+  border: 0;
+  background: transparent;
+  color: var(--ink-dim);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+.crumb-back:hover { color: var(--ink); background: color-mix(in srgb, var(--ink) 10%, transparent); }
+[dir="rtl"] .crumbs { left: auto; right: 12px; }
+.row .into {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 6px;
+  color: var(--ink-dim);
+  font-size: 16px;
+  line-height: 1;
+}
+.row .into:hover { color: var(--ink); background: color-mix(in srgb, var(--ink) 12%, transparent); }
+.flash-into {
+  flex: none;
+  border: 0;
+  border-radius: 7px;
+  padding: 3px 8px;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.flash-into:hover { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+[dir="rtl"] .row .into { transform: scaleX(-1); }
+
+/* inside a country the world-level readouts have nothing to say */
+body.in-detail .tiles,
+body.in-detail .divider,
+body.in-detail .hint { display: none; }
+body.in-detail #regionBlock { display: none; } /* filtering continents inside a country makes no sense */
+
+/* ---------- city layer ---------- */
+.city {
+  fill: color-mix(in srgb, var(--ink) 42%, transparent);
+  stroke: var(--ocean);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+  cursor: pointer;
+  transition: fill .12s ease, opacity .2s ease;
+}
+.city:hover { fill: var(--ink); }
+.city.on { stroke: var(--border-on); }
+.city.lv1, .city.lv1:hover { fill: var(--lv1); }
+.city.lv2, .city.lv2:hover { fill: var(--lv2); }
+.city.lv3, .city.lv3:hover { fill: var(--lv3); }
+.city.lv4, .city.lv4:hover { fill: var(--lv4); }
+/* below the zoom's population threshold, and not marked: out of the way */
+.city.faint { display: none; }
+/* With cities on, the countries step back and stop taking clicks: each mode marks
+   one kind of thing, so a stray click cannot quietly tick a country instead. */
+body.in-cities .land.pickable { opacity: .55; pointer-events: none; }
+body.in-cities .hit, body.in-cities .dot { pointer-events: none; }
+body.in-cities .bar, body.in-cities .pct, body.in-cities .tiles { display: none; }
+body.in-cities #regionBlock { display: none; } /* the continent filter is about countries */
+.row .tag.pop { font-variant-numeric: tabular-nums; }
+.city.hl { stroke: var(--accent); stroke-width: 3; }
