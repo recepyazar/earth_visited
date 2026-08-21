@@ -295,13 +295,61 @@
   // A tap does not always land on the shape under the finger: Chrome hit-tests a
   // touch as a rect and hands ambiguous ones to the container, which for a province
   // the size of a fingernail means the <svg> itself. The point is the truth.
+  // Clipping each country's provinces to its own coarse outline is what makes the
+  // two layers agree along a coast — but it also hides 77 island provinces from the
+  // pointer entirely, because the world map does not draw those islands. So the
+  // province under a press is found geometrically, on the unclipped shapes.
+  let subBoxes = null;
+
+  function measureSubs() {
+    subBoxes = [];
+    const layer = detail ? detail.group : subGroup;
+    if (!layer) return;
+    let order = 0;
+    for (const path of layer.querySelectorAll('path.sub')) {
+      const box = path.getBBox();
+      subBoxes.push({ path, box, area: box.width * box.height, order: order++ });
+    }
+    // biggest first, so the last match to survive the loop is the smallest one
+    subBoxes.sort((a, b) => b.area - a.area);
+  }
+
+  const forgetSubBoxes = () => {
+    subBoxes = null;
+  };
+
   function subAt(e) {
-    const direct = e.target.dataset && e.target.dataset.sub;
-    if (direct) return direct;
-    const found = document
-      .elementsFromPoint(e.clientX, e.clientY)
-      .find((el) => el.dataset && el.dataset.sub);
-    return (found && found.dataset.sub) || null;
+    const layer = detail ? detail.group : grain === 'sub' ? subGroup : null;
+    if (!layer) return null;
+    if (!subBoxes || !subBoxes.length || !layer.contains(subBoxes[0].path)) measureSubs();
+    if (!subBoxes || !subBoxes.length) return null;
+
+    // every province in a layer shares one matrix, so converting the press once
+    // through it covers the zoom, the pan and the layer's own scale together
+    const ctm = subBoxes[0].path.getScreenCTM();
+    if (!ctm) return null;
+    const screen = map.createSVGPoint();
+    screen.x = e.clientX;
+    screen.y = e.clientY;
+    const pt = screen.matrixTransform(ctm.inverse());
+
+    // Simplified neighbours overlap a little, so more than one province can contain
+    // the point. The country under the press settles it — and where even that is
+    // ambiguous, the smaller shape wins, which is how an enclave stays reachable.
+    const country = detail ? detail.code : codeAt(e.target, e.clientX, e.clientY);
+    let found = null;
+    let owned = null;
+    for (const entry of subBoxes) {
+      const b = entry.box;
+      if (pt.x < b.x || pt.x > b.x + b.width || pt.y < b.y || pt.y > b.y + b.height) continue;
+      if (!entry.path.isPointInFill(pt)) continue;
+      found = entry.path; // sorted big to small, so the last match is the smallest
+      if (!country || subOwner.get(entry.path.dataset.sub) !== country) continue;
+      // within the country, whichever is drawn on top is the one being looked at
+      if (!owned || entry.order > owned.order) owned = entry;
+    }
+    const best = (owned && owned.path) || found;
+    return (best && best.dataset.sub) || null;
   }
 
   function codeAt(target, x, y) {
@@ -1137,7 +1185,8 @@
 
     $('search').value = ''; // a country search would hide every province
     $('search').placeholder = t('searchSub');
-    detail = { code, units: data.u, byId, box: data.box, group };
+    detail = { code, units: data.u, byId, box: data.box, group, ps: data.ps };
+    forgetSubBoxes();
     for (const id of byId.keys()) paintSub(id);
     document.body.classList.add('in-detail');
     $('crumbs').hidden = false;
@@ -1152,6 +1201,7 @@
     if (!detail) return;
     for (const { path } of detail.byId.values()) unregister(path);
     detail.group.remove();
+    forgetSubBoxes();
     map.querySelector('defs')?.replaceChildren(); // the clip belonged to that country
     detail = null;
     $('search').value = '';
@@ -1403,7 +1453,13 @@
 
     const frag = document.createDocumentFragment();
     const clips = document.createDocumentFragment();
-    for (const [code, list] of Object.entries(worldSubs.u)) {
+    // biggest countries first, so a small neighbour ends up on top: at this
+    // resolution Israel's southern district covers Gaza and Vorarlberg covers
+    // Liechtenstein, and whoever is drawn last takes the press
+    const countries = Object.entries(worldSubs.u).sort(
+      (a, b) => (byCode.get(b[0])?.a || 0) - (byCode.get(a[0])?.a || 0)
+    );
+    for (const [code, list] of countries) {
       const feature = byCode.get(code);
       if (!feature || !feature.d) continue;
 
@@ -1433,6 +1489,7 @@
     defs.replaceChildren(clips);
     subGroup.appendChild(frag);
     scene.insertBefore(subGroup, scene.querySelector('#dots'));
+    forgetSubBoxes();
     for (const code of subMarks.keys()) paintSub(code);
   }
 
@@ -1642,7 +1699,7 @@
   /* ---------------- globe ---------------- */
   // ?v= keeps a cached stylesheet from ever pairing with a newer script; bump it
   // in index.html and here together when deploying
-  const ASSET_V = 'v=17';
+  const ASSET_V = 'v=18';
   const GLOBE_FILES = [
     'js/vendor/d3-array-shim.js',
     'js/vendor/d3-geo.min.js',

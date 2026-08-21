@@ -227,6 +227,20 @@ both keeps neighbours meeting exactly and throws away the least significant poin
 `KEEP=0.1`, plus 6–20 KB for your language's names). Outlying islets that cannot be seen at world scale are
 dropped — the country layer underneath still draws that land.
 
+Clipping has one cost: 77 island provinces — Prince Edward Island, Guadeloupe, the Scottish isles — fall
+outside the coarse country outline and so were clipped away from the pointer as well as the eye. The province
+under a press is therefore found geometrically rather than by hit-testing: the press is converted through the
+layer's own matrix (which carries the zoom, the pan and the layer's scale in one) and tested against the
+unclipped shapes. Where more than one contains it — simplified neighbours overlap a little — the country
+underneath settles it, and where even that is ambiguous the smaller shape wins, which is how Gaza stays
+reachable under Israel's southern district.
+
+Simplifying the world as one topology also mangled two shapes — North Carolina and one Hong Kong district
+came out as polygons spanning the entire map. Invisible, since the fill is transparent until you mark
+something, but they took every click over their country: pressing California marked North Carolina and filled
+the United States. Anything whose box grew past the shape it came from is now redrawn from that source, and a
+unit test asserts no province is wider or taller than its own country.
+
 The two layers must agree on the ORDER of a country's units, because the share link numbers them by position:
 both sort by ISO code, skip the same nameless polygons and merge the same duplicates, and a unit test asserts
 they match for all twelve detailed countries. That is what lets a province marked on the world map show up

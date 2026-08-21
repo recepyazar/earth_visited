@@ -707,6 +707,49 @@ test('a province turns colour the moment it is marked, without a nudge', async (
   await close(page);
 });
 
+test('a press lands on the province it looks like it lands on', async () => {
+  const page = await open('?lang=tr');
+  await page.click('#grainSub');
+  await page.waitForSelector('#worldsubs path.sub.world', { timeout: 40000 });
+  await settled(page);
+
+  // A province clipped away by its country's coarser outline — Prince Edward
+  // Island, the Scottish isles, Gaza — used to take no press at all, and one
+  // mangled shape took every press over the United States.
+  const marks = async (code) => {
+    const at = await page.evaluate((id) => {
+      const el = document.querySelector(`path[data-sub="${id}"]`);
+      if (!el) return null;
+      const box = el.getBBox();
+      const pt = el.ownerSVGElement.createSVGPoint();
+      for (const fy of [0.5, 0.45, 0.55]) {
+        for (const fx of [0.5, 0.45, 0.55]) {
+          pt.x = box.x + box.width * fx;
+          pt.y = box.y + box.height * fy;
+          if (el.isPointInFill(pt)) {
+            const s = pt.matrixTransform(el.getScreenCTM());
+            return { x: s.x, y: s.y };
+          }
+        }
+      }
+      return null;
+    }, code);
+    if (!at) return 'no point inside it';
+    await page.mouse.click(at.x, at.y);
+    await new Promise((r) => setTimeout(r, 350));
+    const on = await page.$$eval('#worldsubs .sub.on', (e) => e.map((x) => x.dataset.sub));
+    await page.mouse.click(at.x, at.y); // and clear it again
+    await new Promise((r) => setTimeout(r, 250));
+    return on.join(',');
+  };
+
+  for (const code of ['US-CA', 'US-TX', 'TR-34', 'DE-BY', 'CA-PE', 'PS-GZZ', 'UA-59']) {
+    assert.equal(await marks(code), code, `pressing ${code} marks ${code}`);
+  }
+  assert.deepEqual(page.errors, []);
+  await close(page);
+});
+
 test('the globe is made of provinces too, and marks them', async () => {
   const page = await open('?lang=tr&view=globe&grain=sub');
   await page.waitForFunction(() => document.getElementById('globe') && !document.getElementById('globe').hidden, { timeout: 30000 });

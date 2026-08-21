@@ -71,6 +71,49 @@ test('every language has province names, keyed by position', () => {
   assert.equal(tr('US', 'US-CA'), 'Kaliforniya');
 });
 
+// the path format is relative integers, so a box needs walking the whole thing
+const boxOf = (d, scale) => {
+  const tokens = d.match(/[MmlZ]|-?\d+/g) || [];
+  let x = 0;
+  let y = 0;
+  let box = [Infinity, Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    if (token === 'Z' || token === 'l') continue;
+    if (token === 'M' || token === 'm') {
+      const dx = +tokens[++i];
+      const dy = +tokens[++i];
+      x = token === 'M' ? dx : x + dx;
+      y = token === 'M' ? dy : y + dy;
+    } else {
+      x += +token;
+      y += +tokens[++i];
+    }
+    box = [Math.min(box[0], x), Math.min(box[1], y), Math.max(box[2], x), Math.max(box[3], y)];
+  }
+  return box.map((v) => v / scale);
+};
+
+test('no province is bigger than the country it belongs to', () => {
+  // Simplifying the world as one topology mangled two shapes into map-wide
+  // polygons — invisible, but they swallowed every click over their country.
+  // (Position is no test: Bouvet Island is Norwegian and sits in the South
+  // Atlantic. Size is: nothing inside a country is wider than the country.)
+  const MARGIN = 4; // map units of slack for the coarser geometry
+  for (const [code, list] of Object.entries(WORLD_SUBS.u)) {
+    const country = WORLD.f.find((f) => f.c === code);
+    if (!country || !country.d) continue;
+    const outer = boxOf(country.d, WORLD.ps || 1);
+    const wide = outer[2] - outer[0];
+    const tall = outer[3] - outer[1];
+    for (const unit of list) {
+      const box = boxOf(unit.d, WORLD_SUBS.ps);
+      assert.ok(box[2] - box[0] <= wide + MARGIN, `${unit.n} (${code}) is wider than its country`);
+      assert.ok(box[3] - box[1] <= tall + MARGIN, `${unit.n} (${code}) is taller than its country`);
+    }
+  }
+});
+
 test('the layer stays small enough to fetch when the view opens', () => {
   const bytes = Buffer.byteLength(JSON.stringify(WORLD_SUBS));
   assert.ok(bytes < 1_200_000, `${Math.round(bytes / 1024)} KB before gzip`);

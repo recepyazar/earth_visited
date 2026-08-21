@@ -114,6 +114,12 @@ let topo = topology(
 topo = presimplify(topo);
 topo = simplify(topo, quantile(topo, KEEP));
 const simplified = feature(topo, topo.objects.u).features;
+// feature order survives the round trip, so each simplified shape can be checked
+// against the one it came from
+simplified.forEach((f, i) => {
+  f.properties = keepable[i].properties;
+  f.source = keepable[i].geometry;
+});
 
 /* ---------- projection: identical to the world map's ---------- */
 const proj = geoNaturalEarth1().precision(0.1);
@@ -154,14 +160,29 @@ const packs = Object.fromEntries(LANGS.map((l) => [l, {}]));
 let units = 0;
 let skipped = 0;
 let merged = 0;
+const repaired = [];
 
 for (const [country, features] of byCountry) {
   const list = [];
   const byCode = new Map();
   for (const f of features) {
     const p = f.properties;
-    const geometry = bigEnough(f.geometry);
+    let geometry = bigEnough(f.geometry);
     if (!geometry) continue;
+
+    // Simplifying the whole world as one topology mangles a few shapes — North
+    // Carolina came out spanning the entire map, invisible but swallowing every
+    // click over the United States. Anything that grew is redrawn from its source.
+    const want = measure.bounds({ type: 'Feature', geometry: f.source });
+    const got = measure.bounds({ type: 'Feature', geometry });
+    const grew =
+      got[0][0] < want[0][0] - 1 || got[0][1] < want[0][1] - 1 ||
+      got[1][0] > want[1][0] + 1 || got[1][1] > want[1][1] + 1;
+    if (grew) {
+      geometry = bigEnough(f.source) || f.source;
+      repaired.push(`${p.iso_3166_2 || p.adm1_code} ${p.name_en || p.name || ''}`);
+    }
+
     draw({ type: 'Feature', properties: p, geometry });
     const d = ctx.result();
     if (!d) continue;
@@ -229,4 +250,5 @@ console.log(`world.js       ${units} units in ${Object.keys(out).length} countri
 console.log(`biggest        ${big.map(([c, l]) => `${c} ${l.length}`).join('  ')}`);
 if (skipped) console.log(`skipped        ${skipped} polygons with no name in any language`);
 console.log(`name packs     ${packSizes.join('  ')}`);
+if (repaired.length) console.log(`repaired       ${repaired.length} shapes the simplifier mangled: ${repaired.slice(0, 8).join(', ')}${repaired.length > 8 ? '…' : ''}`);
 if (merged) console.log(`merged         ${merged} polygons into the unit sharing their code`);
